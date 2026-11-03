@@ -1,9 +1,13 @@
 """Tests for bakim-bloklari command line interface."""
 
+import argparse
+import runpy
+import sys
 from pathlib import Path
 
 import pytest
 
+from bakim_bloklari import cli
 from bakim_bloklari.cli import main
 
 
@@ -235,8 +239,32 @@ def test_cli_get_default_blueprints_dir_fallbacks(
     found = cli.get_default_blueprints_dir()
     assert found.is_dir()
 
-    # When both don't exist, returns candidate
     fake_cli_file = tmp_path / "pkg" / "src" / "cli.py"
     monkeypatch.setattr(cli, "__file__", str(fake_cli_file))
+
+    # When packaged blueprints dir exists inside package
+    pkg_bp_dir = tmp_path / "pkg" / "src" / "blueprints"
+    pkg_bp_dir.mkdir(parents=True)
+    pkg_found = cli.get_default_blueprints_dir()
+    assert pkg_found == pkg_bp_dir
+
+    # When both don't exist, returns candidate
+    pkg_bp_dir.rmdir()
     fallback = cli.get_default_blueprints_dir()
     assert fallback == tmp_path / "blueprints" / "automation" / "bakim_bloklari"
+
+
+def test_cli_unhandled_command_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeArgs:
+        command = "unhandled_custom_command"
+
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self, argv: FakeArgs())
+    code = cli.main([])
+    assert code == 0
+
+
+def test_cli_module_main_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["bakim-bloklari", "--help"])
+    with pytest.raises(SystemExit) as exc_info:
+        runpy.run_path(cli.__file__, run_name="__main__")
+    assert exc_info.value.code == 0

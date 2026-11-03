@@ -1,0 +1,111 @@
+blueprint:
+  name: "Elderly Care - Multi-Stage Escalation Pipeline"
+  description: >
+    A graduated response pipeline designed to eliminate alert fatigue for families.
+    Stage 1: Plays an inquiry chime or voice prompt on a local smart speaker ("Are you okay?").
+    Stage 2: Waits for a local confirmation (button press or sensor motion). If unacknowledged,
+    sends a polite push notification to the resident's mobile phone.
+    Stage 3: If still unacknowledged after the timeout, escalates to a high-priority critical
+    alarm to designated family members and caregivers.
+  domain: automation
+  input:
+    trigger_boolean:
+      name: Trigger Entity
+      description: Input boolean or alert entity that activates this escalation pipeline.
+      selector:
+        entity:
+          domain: [input_boolean, alert]
+    ack_entity:
+      name: Acknowledgment Button / Switch (Optional)
+      description: Button or boolean the resident can press to acknowledge and cancel the alert.
+      default: ""
+      selector:
+        entity:
+          domain: [input_boolean, binary_sensor, event]
+    wait_resident_minutes:
+      name: Resident Response Window (Minutes)
+      description: Minutes to wait for resident response before alerting family.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 30
+          unit_of_measurement: minutes
+          mode: box
+    speaker_action:
+      name: Stage 1 - Local Speaker Action (Optional)
+      description: Action to play a local chime or voice prompt inside the home.
+      default: []
+      selector:
+        action: {}
+    resident_notify_action:
+      name: Stage 2 - Resident Phone Notification (Optional)
+      description: Action to send a soft notification to the resident's device.
+      default: []
+      selector:
+        action: {}
+    caregiver_notify_action:
+      name: Stage 3 - Caregiver Critical Alarm Action
+      description: Urgent action executed if no acknowledgment is received.
+      selector:
+        action: {}
+
+variables:
+  trigger_boolean_var: !input trigger_boolean
+  ack_entity_var: !input ack_entity
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input trigger_boolean
+    to: "on"
+
+condition:
+  # Ensure trigger entity is valid
+  - condition: template
+    value_template: >-
+      {% set ent = trigger_boolean_var %}
+      {{ not is_state(ent, 'unavailable') and not is_state(ent, 'unknown') }}
+
+action:
+  # Stage 1: Local speaker prompt
+  - choose: []
+    default: !input speaker_action
+
+  # Stage 2: Resident notification
+  - choose: []
+    default: !input resident_notify_action
+
+  # Wait for acknowledgment (if ack_entity configured) or delay timeout
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {% set ack = ack_entity_var %}
+              {{ ack is defined and ack != '' }}
+        sequence:
+          - wait_for_trigger:
+              - platform: template
+                value_template: >-
+                  {% set ack = ack_entity_var %}
+                  {{ ack and is_state(ack, 'on') }}
+            timeout:
+              minutes: !input wait_resident_minutes
+            continue_on_timeout: true
+    default:
+      - delay:
+          minutes: !input wait_resident_minutes
+
+  # Stage 3: If still not acknowledged, escalate to caregiver
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {% set ack = ack_entity_var %}
+              {% if ack and ack != '' %}
+                {{ not is_state(ack, 'on') }}
+              {% else %}
+                true
+              {% endif %}
+        sequence: !input caregiver_notify_action

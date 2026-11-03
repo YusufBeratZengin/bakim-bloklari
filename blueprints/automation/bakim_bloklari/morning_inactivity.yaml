@@ -96,7 +96,9 @@ condition:
     value_template: >-
       {% set start = morning_start_time_var %}
       {% if start and start != '' %}
-        {{ now().strftime('%H:%M:%S') >= start }}
+        {% set start_str = start | string %}
+        {% set full_start = start_str if (start_str | length == 8) else (start_str ~ ':00') %}
+        {{ now().strftime('%H:%M:%S') >= full_start }}
       {% else %}
         true
       {% endif %}

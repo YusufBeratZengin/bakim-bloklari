@@ -86,9 +86,10 @@ action:
               {{ ack is defined and ack != '' }}
         sequence:
           - wait_for_trigger:
-              - platform: state
-                entity_id: !input ack_entity
-                to: "on"
+              - platform: template
+                value_template: >-
+                  {% set ack = ack_entity_var %}
+                  {{ ack and is_state(ack, 'on') }}
             timeout:
               minutes: !input wait_resident_minutes
             continue_on_timeout: true

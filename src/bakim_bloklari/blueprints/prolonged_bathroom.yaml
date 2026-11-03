@@ -1,0 +1,106 @@
+blueprint:
+  name: "Elderly Care - Prolonged Bathroom Occupancy Alert"
+  description: >
+    Detects unusually prolonged occupancy in the bathroom or wet room using motion,
+    mmWave radar presence, or door contact sensors. Bathroom falls and medical incidents
+    often result in sustained immobility behind closed doors. Triggers an alert when occupancy
+    exceeds the configured threshold while resident is home. Safe against unavailable/offline
+    sensors.
+  domain: automation
+  input:
+    bathroom_sensor:
+      name: Bathroom Presence / Motion Sensor
+      description: Motion sensor, mmWave presence radar, or contact sensor indicating bathroom occupancy.
+      selector:
+        entity:
+          domain: binary_sensor
+    door_sensor:
+      name: Bathroom Door Contact Sensor (Optional)
+      description: Optional door sensor to confirm door is closed during occupancy.
+      default: ""
+      selector:
+        entity:
+          domain: binary_sensor
+    max_duration_minutes:
+      name: Maximum Safe Duration (Minutes)
+      description: Number of minutes of continuous occupancy before alerting.
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 120
+          unit_of_measurement: minutes
+          mode: box
+    person_entity:
+      name: Resident Person Entity (Optional)
+      description: Person entity to confirm resident is home.
+      default: ""
+      selector:
+        entity:
+          domain: person
+    vacation_mode:
+      name: Vacation Mode Switch (Optional)
+      description: Disable alerts when home is unoccupied.
+      default: ""
+      selector:
+        entity:
+          domain: input_boolean
+    notify_action:
+      name: Escalation Notification Action
+      description: Action sequence (speaker chime, push notification, caregiver alarm).
+      selector:
+        action: {}
+
+variables:
+  bathroom_sensor_var: !input bathroom_sensor
+  door_sensor_var: !input door_sensor
+  person_entity_var: !input person_entity
+  vacation_mode_var: !input vacation_mode
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input bathroom_sensor
+    to: "on"
+    for:
+      minutes: !input max_duration_minutes
+
+condition:
+  # 1. Resident must be home and vacation mode off
+  - condition: template
+    value_template: >-
+      {% set vac = vacation_mode_var %}
+      {% if vac and vac != '' and is_state(vac, 'on') %}
+        false
+      {% else %}
+        true
+      {% endif %}
+  - condition: template
+    value_template: >-
+      {% set person = person_entity_var %}
+      {% if person and person != '' and not is_state(person, 'home') %}
+        false
+      {% else %}
+        true
+      {% endif %}
+
+  # 2. Sensor health: Sensor must not be in unknown/unavailable state
+  - condition: template
+    value_template: >-
+      {% set s = bathroom_sensor_var %}
+      {{ not is_state(s, 'unavailable') and not is_state(s, 'unknown') }}
+
+  # 3. If door sensor is specified, verify door sensor is online
+  - condition: template
+    value_template: >-
+      {% set door = door_sensor_var %}
+      {% if door and door != '' %}
+        {{ not is_state(door, 'unavailable') and not is_state(door, 'unknown') }}
+      {% else %}
+        true
+      {% endif %}
+
+action:
+  - choose: []
+    default: !input notify_action

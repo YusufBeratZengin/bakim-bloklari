@@ -53,7 +53,16 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-"bakim_bloklari" = ["py.typed"]
+"bakim_bloklari" = ["py.typed", "blueprints/*.yaml"]
+
+[tool.coverage.run]
+source = ["bakim_bloklari"]
+branch = true
+disable_warnings = ["module-not-measured"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 85
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

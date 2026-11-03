@@ -14,18 +14,22 @@ from bakim_bloklari.schema import BlueprintValidator
 
 
 def get_default_blueprints_dir() -> Path:
-    """Find default blueprints directory relative to repo or package."""
+    """Find default blueprints directory relative to cwd, repo root, or installed package."""
     cwd = Path.cwd()
     candidate = cwd / "blueprints" / "automation" / "bakim_bloklari"
     if candidate.is_dir():
         return candidate
-    # Fallback to package relative
-    pkg_candidate = (
+    # Fallback to repo root if running from repository clone
+    repo_candidate = (
         Path(__file__).resolve().parent.parent.parent
         / "blueprints"
         / "automation"
         / "bakim_bloklari"
     )
+    if repo_candidate.is_dir():
+        return repo_candidate
+    # Fallback to bundled blueprints inside installed package
+    pkg_candidate = Path(__file__).resolve().parent / "blueprints"
     if pkg_candidate.is_dir():
         return pkg_candidate
     return candidate

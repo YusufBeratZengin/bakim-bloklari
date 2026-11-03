@@ -16,13 +16,22 @@ class ScenarioSuite:
 
     def __init__(self, blueprints_dir: Path | None = None) -> None:
         self.validator = BlueprintValidator()
-        self.blueprints_dir = (
-            blueprints_dir
-            or Path(__file__).resolve().parent.parent.parent
-            / "blueprints"
-            / "automation"
-            / "bakim_bloklari"
-        )
+        if blueprints_dir is not None:
+            self.blueprints_dir = blueprints_dir
+        else:
+            repo_candidate = (
+                Path(__file__).resolve().parent.parent.parent
+                / "blueprints"
+                / "automation"
+                / "bakim_bloklari"
+            )
+            pkg_candidate = Path(__file__).resolve().parent / "blueprints"
+            if repo_candidate.is_dir():
+                self.blueprints_dir = repo_candidate
+            elif pkg_candidate.is_dir():
+                self.blueprints_dir = pkg_candidate
+            else:
+                self.blueprints_dir = repo_candidate
         self._cache: dict[str, BlueprintDefinition] = {}
 
     def get_blueprint(self, filename: str) -> BlueprintDefinition:

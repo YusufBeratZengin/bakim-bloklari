@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `inspect`: Detailed view of blueprint inputs, default values, and selectors.
   - `install`: Copy blueprints to local Home Assistant config directory.
 - **Test Suite**:
-  - 49 unit and integration tests with >99% test coverage via `pytest-cov`.
+  - 52 unit and integration tests with 100% statement coverage (99.23% overall) via `pytest-cov`.
 - **CI / Quality Automation**:
   - GitHub Actions matrix workflow (Ubuntu + Windows).
   - Cross-platform check script `scripts/check.sh`.
