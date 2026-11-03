@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bakim-bloklari"
+version = "0.1.0"
+description = "Privacy-first Home Assistant blueprints and simulation suite for elderly care"
+readme = "README.md"
+authors = [
+    { name = "Yusuf Berat Zengin" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "jinja2>=3.0",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Home Automation",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+]
+
+[project.urls]
+Homepage = "https://github.com/yusufberatzengin/bakim-bloklari"
+Documentation = "https://github.com/yusufberatzengin/bakim-bloklari#readme"
+Issues = "https://github.com/yusufberatzengin/bakim-bloklari/issues"
+
+[project.scripts]
+bakim-bloklari = "bakim_bloklari.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "mypy>=1.0",
+    "ruff>=0.1.0",
+    "types-PyYAML>=6.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "--cov=bakim_bloklari --cov-report=term-missing --cov-fail-under=85"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

@@ -1,0 +1,63 @@
+blueprint:
+  name: "Elderly Care - 'I Am OK' & Emergency Button Handler"
+  description: >
+    Handles wireless smart buttons (Zigbee, Matter, Z-Wave) placed near beds, bedside tables,
+    or necklaces. A single press acknowledges active morning checks or daily check-ins ("I Am OK"),
+    resetting alert flags and turning off alert booleans. A double press or long press initiates
+    an immediate high-priority emergency protocol to caregivers.
+  domain: automation
+  input:
+    button_entity:
+      name: Smart Button Entity
+      description: Event entity, sensor, or binary sensor tracking button clicks.
+      selector:
+        entity: {}
+    single_press_action:
+      name: Single Press Action ('I Am OK' / Acknowledge)
+      description: Action sequence to clear alerts or reset check-in status.
+      default: []
+      selector:
+        action: {}
+    emergency_press_action:
+      name: Emergency Action (Double Press / Hold / SOS)
+      description: Action sequence for immediate distress call or caregiver alert.
+      selector:
+        action: {}
+    emergency_event_types:
+      name: Emergency Event Types / States
+      description: Event types or state values representing emergency / double / hold.
+      default: "double_press, long_press, hold, emergency"
+      selector:
+        text: {}
+
+variables:
+  button_entity_var: !input button_entity
+  emergency_types_var: !input emergency_event_types
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input button_entity
+  - platform: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input button_entity
+
+condition:
+  - condition: template
+    value_template: >-
+      {% set b = button_entity_var %}
+      {{ not is_state(b, 'unavailable') and not is_state(b, 'unknown') }}
+
+action:
+  - choose:
+      # Emergency trigger check
+      - conditions:
+          - condition: template
+            value_template: >-
+              {% set val = trigger.to_state.state if trigger.to_state is defined else '' %}
+              {% set emergency_types = emergency_types_var.split(',') | map('trim') | list %}
+              {{ val in emergency_types }}
+        sequence: !input emergency_press_action
+    default: !input single_press_action

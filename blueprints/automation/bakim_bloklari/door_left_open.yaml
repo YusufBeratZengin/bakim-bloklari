@@ -1,0 +1,105 @@
+blueprint:
+  name: "Elderly Care - Exterior Door Left Open & Night Wandering"
+  description: >
+    Monitors exterior and entrance doors for prolonged open states or dangerous nighttime
+    wandering. During the day, alerts if the door stays open beyond a safe threshold
+    (e.g. 5 minutes). During night hours, triggers immediate or short-delay alerts to protect
+    elders with cognitive decline or sleepwalking tendencies. Filters out unavailable/unknown
+    states.
+  domain: automation
+  input:
+    door_sensor:
+      name: Exterior Door Contact Sensor
+      description: Binary sensor attached to the entrance or exit door.
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: door
+    day_open_timeout_minutes:
+      name: Daytime Open Timeout (Minutes)
+      description: How long door can remain open during daytime before triggering an alert.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: minutes
+          mode: box
+    night_wandering_alert:
+      name: Enable Night Wandering Alert
+      description: Immediately alert if the door is opened during configured night hours.
+      default: true
+      selector:
+        boolean: {}
+    night_start_time:
+      name: Night Hours Start
+      description: Start of night monitoring window.
+      default: "23:00:00"
+      selector:
+        time: {}
+    night_end_time:
+      name: Night Hours End
+      description: End of night monitoring window.
+      default: "06:00:00"
+      selector:
+        time: {}
+    notify_action:
+      name: Door Alert Notification Action
+      description: Action sequence to run when door is left open or opened at night.
+      selector:
+        action: {}
+
+variables:
+  door_sensor_var: !input door_sensor
+  night_alert_var: !input night_wandering_alert
+  night_start_var: !input night_start_time
+  night_end_var: !input night_end_time
+
+mode: restart
+
+trigger:
+  # Daytime trigger: open for configured duration
+  - platform: state
+    entity_id: !input door_sensor
+    to: "on"
+    for:
+      minutes: !input day_open_timeout_minutes
+    id: daytime_open
+
+  # Night wandering trigger: door opened at night
+  - platform: state
+    entity_id: !input door_sensor
+    to: "on"
+    id: night_open
+
+condition:
+  # 1. Door sensor must not be offline / unavailable / unknown
+  - condition: template
+    value_template: >-
+      {% set d = door_sensor_var %}
+      {{ not is_state(d, 'unavailable') and not is_state(d, 'unknown') }}
+
+  # 2. Trigger routing condition
+  - condition: template
+    value_template: >-
+      {% set trig = trigger.id | default('daytime_open') %}
+      {% if trig == 'night_open' %}
+        {% if not night_alert_var %}
+          false
+        {% else %}
+          {% set start = night_start_var %}
+          {% set end = night_end_var %}
+          {% set t = now().strftime('%H:%M:%S') %}
+          {% if start > end %}
+            {{ t >= start or t <= end }}
+          {% else %}
+            {{ t >= start and t <= end }}
+          {% endif %}
+        {% endif %}
+      {% else %}
+        true
+      {% endif %}
+
+action:
+  - choose: []
+    default: !input notify_action

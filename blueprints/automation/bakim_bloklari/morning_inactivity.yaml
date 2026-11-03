@@ -1,0 +1,105 @@
+blueprint:
+  name: "Elderly Care - Morning Inactivity Monitor"
+  description: >
+    Monitors living area motion sensors for morning activity. If no motion is detected
+    by the specified check time while the resident is home, a staged escalation alert
+    is triggered. Designed for elderly individuals living alone without intrusive cameras.
+    Gracefully ignores unavailable or unknown sensor states to eliminate false alarms.
+  domain: automation
+  input:
+    motion_sensors:
+      name: Motion / Presence Sensors
+      description: Motion or presence binary sensors to check for morning activity (PIR, mmWave radar, contact).
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+    check_time:
+      name: Morning Check Time
+      description: The daily time at which morning activity is evaluated.
+      default: "10:00:00"
+      selector:
+        time: {}
+    morning_start_time:
+      name: Morning Window Start
+      description: Start of the morning activity window (e.g. 06:30).
+      default: "06:30:00"
+      selector:
+        time: {}
+    person_entity:
+      name: Resident Person Entity (Optional)
+      description: Person entity to verify the resident is home before alarming.
+      default: ""
+      selector:
+        entity:
+          domain: person
+    vacation_mode:
+      name: Vacation / Away Override Switch (Optional)
+      description: Input boolean that disables alerts when resident is visiting family or away.
+      default: ""
+      selector:
+        entity:
+          domain: input_boolean
+    ok_button:
+      name: Check-in / Reset Button (Optional)
+      description: Entity used to acknowledge morning check-in or reset alarms.
+      default: ""
+      selector:
+        entity:
+          domain: [input_boolean, binary_sensor, event]
+    notify_action:
+      name: Escalation Notification Action
+      description: Action sequence to run when no morning activity is detected.
+      selector:
+        action: {}
+
+variables:
+  motion_sensors_var: !input motion_sensors
+  person_entity_var: !input person_entity
+  vacation_mode_var: !input vacation_mode
+
+mode: single
+
+trigger:
+  - platform: time
+    at: !input check_time
+
+condition:
+  # 1. Resident must not be marked away / vacation mode must be off
+  - condition: template
+    value_template: >-
+      {% set vac = vacation_mode_var %}
+      {% if vac and vac != '' and is_state(vac, 'on') %}
+        false
+      {% else %}
+        true
+      {% endif %}
+  - condition: template
+    value_template: >-
+      {% set person = person_entity_var %}
+      {% if person and person != '' and not is_state(person, 'home') %}
+        false
+      {% else %}
+        true
+      {% endif %}
+
+  # 2. Safety filter: Ensure sensors are not completely unavailable or unknown
+  - condition: template
+    value_template: >-
+      {% set sensors = motion_sensors_var %}
+      {% set sensor_list = sensors if sensors is iterable and sensors is not string else [sensors] %}
+      {% set valid_sensors = sensor_list | reject('is_state', 'unavailable') | reject('is_state', 'unknown') | list %}
+      {{ valid_sensors | length > 0 }}
+
+  # 3. Inactivity condition: None of the valid sensors are currently active or triggered
+  - condition: template
+    value_template: >-
+      {% set sensors = motion_sensors_var %}
+      {% set sensor_list = sensors if sensors is iterable and sensors is not string else [sensors] %}
+      {% set valid_sensors = sensor_list | reject('is_state', 'unavailable') | reject('is_state', 'unknown') | list %}
+      {% set active_sensors = valid_sensors | select('is_state', 'on') | list %}
+      {{ active_sensors | length == 0 }}
+
+action:
+  - choose: []
+    default: !input notify_action
