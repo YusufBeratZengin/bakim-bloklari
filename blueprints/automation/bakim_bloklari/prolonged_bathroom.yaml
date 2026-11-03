@@ -91,12 +91,12 @@ condition:
       {% set s = bathroom_sensor_var %}
       {{ not is_state(s, 'unavailable') and not is_state(s, 'unknown') }}
 
-  # 3. If door sensor is specified, verify door is closed or occupancy continues
+  # 3. If door sensor is specified, verify door sensor is online
   - condition: template
     value_template: >-
       {% set door = door_sensor_var %}
       {% if door and door != '' %}
-        {{ not is_state(door, 'unavailable') }}
+        {{ not is_state(door, 'unavailable') and not is_state(door, 'unknown') }}
       {% else %}
         true
       {% endif %}

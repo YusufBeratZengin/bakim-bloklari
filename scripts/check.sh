@@ -15,10 +15,10 @@ if [ -f "$REPO_ROOT/.venv/Scripts/python.exe" ]; then
     PYTHON="$REPO_ROOT/.venv/Scripts/python.exe"
 elif [ -f "$REPO_ROOT/.venv/bin/python" ]; then
     PYTHON="$REPO_ROOT/.venv/bin/python"
-elif command -v python3 &>/dev/null; then
-    PYTHON="python3"
 elif command -v python &>/dev/null; then
     PYTHON="python"
+elif command -v python3 &>/dev/null; then
+    PYTHON="python3"
 elif command -v py &>/dev/null; then
     PYTHON="py -3"
 else

@@ -5,7 +5,7 @@
 [![CI](https://github.com/yusufberatzengin/bakim-bloklari/actions/workflows/ci.yml/badge.svg)](https://github.com/yusufberatzengin/bakim-bloklari/actions)
 [![Lisans: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
-[![Kapsama: %95](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](scripts/check.sh)
+[![Kapsama: %99](https://img.shields.io/badge/coverage-99%25-brightgreen.svg)](scripts/check.sh)
 
 [English README](README.md)
 

@@ -77,14 +77,24 @@ action:
   - choose: []
     default: !input resident_notify_action
 
-  # Wait for acknowledgment or timeout
-  - wait_for_trigger:
-      - platform: state
-        entity_id: !input ack_entity
-        to: "on"
-    timeout:
-      minutes: !input wait_resident_minutes
-    continue_on_timeout: true
+  # Wait for acknowledgment (if ack_entity configured) or delay timeout
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {% set ack = ack_entity_var %}
+              {{ ack is defined and ack != '' }}
+        sequence:
+          - wait_for_trigger:
+              - platform: state
+                entity_id: !input ack_entity
+                to: "on"
+            timeout:
+              minutes: !input wait_resident_minutes
+            continue_on_timeout: true
+    default:
+      - delay:
+          minutes: !input wait_resident_minutes
 
   # Stage 3: If still not acknowledged, escalate to caregiver
   - choose:

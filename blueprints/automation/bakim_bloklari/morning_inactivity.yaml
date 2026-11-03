@@ -57,6 +57,8 @@ variables:
   motion_sensors_var: !input motion_sensors
   person_entity_var: !input person_entity
   vacation_mode_var: !input vacation_mode
+  ok_button_var: !input ok_button
+  morning_start_time_var: !input morning_start_time
 
 mode: single
 
@@ -65,7 +67,7 @@ trigger:
     at: !input check_time
 
 condition:
-  # 1. Resident must not be marked away / vacation mode must be off
+  # 1. Resident must not be marked away / vacation mode must be off / ok check-in not already active
   - condition: template
     value_template: >-
       {% set vac = vacation_mode_var %}
@@ -79,6 +81,22 @@ condition:
       {% set person = person_entity_var %}
       {% if person and person != '' and not is_state(person, 'home') %}
         false
+      {% else %}
+        true
+      {% endif %}
+  - condition: template
+    value_template: >-
+      {% set ok = ok_button_var %}
+      {% if ok and ok != '' and is_state(ok, 'on') %}
+        false
+      {% else %}
+        true
+      {% endif %}
+  - condition: template
+    value_template: >-
+      {% set start = morning_start_time_var %}
+      {% if start and start != '' %}
+        {{ now().strftime('%H:%M:%S') >= start }}
       {% else %}
         true
       {% endif %}

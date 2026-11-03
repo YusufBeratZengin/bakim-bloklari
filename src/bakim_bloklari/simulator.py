@@ -240,6 +240,21 @@ class HomeAssistantSimulator:
                 self.log(f"Action wait_for_trigger reached (timeout={timeout_mins}m)")
                 # advance time by wait duration
                 self.advance_time(minutes=timeout_mins)
+            elif "delay" in act:
+                delay_mins = 5
+                delay_spec = act.get("delay", {})
+                if isinstance(delay_spec, dict):
+                    mins_val = delay_spec.get("minutes", 5)
+                    if isinstance(mins_val, InputRef):
+                        mins_val = self.inputs.get(mins_val.key, 5)
+                    try:
+                        delay_mins = int(mins_val)
+                    except (ValueError, TypeError):
+                        delay_mins = 5
+                elif isinstance(delay_spec, (int, float)):
+                    delay_mins = int(delay_spec)
+                self.log(f"Action delay reached (duration={delay_mins}m)")
+                self.advance_time(minutes=delay_mins)
             else:
                 self._record_action(act)
 

@@ -13,13 +13,15 @@ def make_dummy_blueprint(
     conditions: list[dict[str, Any]] | None = None,
     actions: list[dict[str, Any]] | None = None,
     variables: dict[str, Any] | None = None,
+    inputs: dict[str, Any] | None = None,
 ) -> BlueprintDefinition:
     return BlueprintDefinition(
         path=Path("dummy.yaml"),
         name="Dummy Blueprint",
         description="A dummy blueprint for unit testing",
         domain="automation",
-        inputs={
+        inputs=inputs
+        or {
             "input_one": {"name": "Input 1", "default": "default_val"},
             "optional_input": {"name": "Optional"},
         },
@@ -172,3 +174,153 @@ def test_simulator_substitute_inputs() -> None:
     assert "true" in subbed
     assert "false" in subbed
     assert "''" in subbed
+
+
+def test_simulator_literal_variables_and_empty_template() -> None:
+    bp = make_dummy_blueprint(
+        variables={"literal_var": "static_value"},
+        conditions=[{"condition": "template", "value_template": ""}],
+    )
+    sim = HomeAssistantSimulator(bp)
+    assert sim.resolved_variables["literal_var"] == "static_value"
+    # Empty template condition returns True
+    assert sim.evaluate_condition_item({"condition": "template", "value_template": ""}, {}) is True
+
+
+def test_simulator_trigger_event_failing_conditions() -> None:
+    bp = make_dummy_blueprint(
+        conditions=[{"condition": "state", "entity_id": "input_boolean.gate", "state": "open"}]
+    )
+    sim = HomeAssistantSimulator(bp)
+    sim.set_state("input_boolean.gate", "closed")
+    triggered = sim.trigger_event("button_press", {"entity_id": "event.button"})
+    assert triggered is False
+    assert len(sim.action_history) == 0
+
+
+def test_simulator_actions_advanced_branches() -> None:
+    bp = make_dummy_blueprint(
+        inputs={
+            "seq_input": {"name": "Seq", "default": [{"service": "notify.via_input_ref"}]},
+            "timeout_ref": {"name": "Timeout", "default": 8},
+            "ent_ref": {"name": "Ent", "default": "sensor.target"},
+        },
+        actions=[
+            {
+                "choose": [
+                    {
+                        "conditions": [
+                            {
+                                "condition": "state",
+                                "entity_id": InputRef("ent_ref"),
+                                "state": "ready",
+                            }
+                        ],
+                        "sequence": InputRef("seq_input"),
+                    }
+                ],
+                "default": {"service": "notify.single_dict_default"},
+            },
+            {"wait_for_trigger": [], "timeout": {"minutes": InputRef("timeout_ref")}},
+            {"wait_for_trigger": [], "timeout": {"minutes": "invalid_number"}},
+            {"delay": {"minutes": InputRef("timeout_ref")}},
+            {"delay": {"minutes": "invalid"}},
+            {"delay": 3},
+        ],
+    )
+    sim = HomeAssistantSimulator(bp, inputs={"timeout_ref": 8, "ent_ref": "sensor.target"})
+    sim.set_state("sensor.target", "ready")
+    sim.trigger_time_check()
+    assert len(sim.action_history) == 1
+    assert sim.action_history[0].action_type == "notify.via_input_ref"
+
+    # Now test single dict default execution
+    sim.set_state("sensor.target", "busy")
+    sim.trigger_time_check()
+    assert len(sim.action_history) == 2
+    assert sim.action_history[1].action_type == "notify.single_dict_default"
+
+
+def test_morning_inactivity_ok_button_suppression() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    bp_path = repo_root / "blueprints" / "automation" / "bakim_bloklari" / "morning_inactivity.yaml"
+    from bakim_bloklari.schema import BlueprintValidator
+
+    validator = BlueprintValidator()
+    bp = validator.parse_blueprint(bp_path)
+    assert bp is not None
+
+    sim = HomeAssistantSimulator(
+        bp,
+        inputs={
+            "motion_sensors": ["binary_sensor.hallway_motion"],
+            "check_time": "10:00:00",
+            "morning_start_time": "06:30:00",
+            "person_entity": "person.elder",
+            "ok_button": "input_boolean.morning_ok",
+            "notify_action": [{"service": "notify.family"}],
+        },
+    )
+    sim.set_time(datetime(2026, 11, 3, 10, 0, 0))
+    sim.set_state("person.elder", "home")
+    sim.set_state("binary_sensor.hallway_motion", "off")
+    # Resident already pressed check-in button (morning_ok is on)
+    sim.set_state("input_boolean.morning_ok", "on")
+
+    triggered = sim.trigger_time_check("10:00:00")
+    assert triggered is False
+    assert len(sim.action_history) == 0
+
+
+def test_morning_inactivity_before_start_time() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    bp_path = repo_root / "blueprints" / "automation" / "bakim_bloklari" / "morning_inactivity.yaml"
+    from bakim_bloklari.schema import BlueprintValidator
+
+    validator = BlueprintValidator()
+    bp = validator.parse_blueprint(bp_path)
+    assert bp is not None
+
+    sim = HomeAssistantSimulator(
+        bp,
+        inputs={
+            "motion_sensors": ["binary_sensor.hallway_motion"],
+            "check_time": "06:00:00",
+            "morning_start_time": "06:30:00",
+            "notify_action": [{"service": "notify.family"}],
+        },
+    )
+    # Check triggered at 05:00:00 before morning window starts
+    sim.set_time(datetime(2026, 11, 3, 5, 0, 0))
+    sim.set_state("binary_sensor.hallway_motion", "off")
+
+    triggered = sim.trigger_time_check("05:00:00")
+    assert triggered is False
+    assert len(sim.action_history) == 0
+
+
+def test_prolonged_bathroom_door_unknown_suppressed() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    bp_path = repo_root / "blueprints" / "automation" / "bakim_bloklari" / "prolonged_bathroom.yaml"
+    from bakim_bloklari.schema import BlueprintValidator
+
+    validator = BlueprintValidator()
+    bp = validator.parse_blueprint(bp_path)
+    assert bp is not None
+
+    sim = HomeAssistantSimulator(
+        bp,
+        inputs={
+            "bathroom_sensor": "binary_sensor.bath_presence",
+            "door_sensor": "binary_sensor.bath_door",
+            "max_duration_minutes": 30,
+            "notify_action": [{"service": "notify.alert"}],
+        },
+    )
+    sim.set_state("binary_sensor.bath_presence", "on")
+    # Door sensor is in unknown state
+    sim.set_state("binary_sensor.bath_door", "unknown")
+
+    triggered = sim.trigger_state_change("binary_sensor.bath_presence", "on")
+    assert triggered is False
+    assert len(sim.action_history) == 0

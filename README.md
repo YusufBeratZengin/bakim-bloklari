@@ -5,7 +5,7 @@
 [![CI](https://github.com/yusufberatzengin/bakim-bloklari/actions/workflows/ci.yml/badge.svg)](https://github.com/yusufberatzengin/bakim-bloklari/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
-[![Coverage: 95%](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](scripts/check.sh)
+[![Coverage: 99%](https://img.shields.io/badge/coverage-99%25-brightgreen.svg)](scripts/check.sh)
 
 `bakim-bloklari` delivers non-intrusive ambient awareness automations for seniors living independently. Without deploying privacy-invasive cameras or listening microphones, it monitors passive ambient sensors (PIR motion detectors, mmWave presence radar, and magnetic door contacts) to detect morning immobility, prolonged bathroom occupancy, or nighttime exit wandering, escalating notifications to family members only when necessary.
 

@@ -152,3 +152,48 @@ def test_parse_blueprint_returns_none_on_invalid(tmp_path: Path) -> None:
     invalid_file.write_text("invalid: yaml: content", encoding="utf-8")
     parsed = validator.parse_blueprint(invalid_file)
     assert parsed is None
+
+
+def test_parse_blueprint_single_dict_blocks(tmp_path: Path) -> None:
+    validator = BlueprintValidator()
+    bp_file = tmp_path / "single_blocks.yaml"
+    bp_file.write_text(
+        """blueprint:
+  name: "Single Blocks Blueprint"
+  description: "Testing single dict triggers conditions and actions."
+  domain: automation
+  input:
+    test_sensor:
+      name: "Test"
+      selector:
+        entity: {}
+variables: "not-a-dict"
+trigger:
+  platform: time
+  at: "08:00:00"
+condition:
+  condition: template
+  value_template: "{{ not is_state('s', 'unavailable') and not is_state('s', 'unknown') }}"
+action:
+  service: notify.notify
+""",
+        encoding="utf-8",
+    )
+    parsed = validator.parse_blueprint(bp_file)
+    assert parsed is not None
+    assert isinstance(parsed.triggers, list)
+    assert len(parsed.triggers) == 1
+    assert isinstance(parsed.conditions, list)
+    assert len(parsed.conditions) == 1
+    assert isinstance(parsed.actions, list)
+    assert len(parsed.actions) == 1
+    assert parsed.variables == {}
+
+
+def test_input_constructor_non_scalar(tmp_path: Path) -> None:
+    validator = BlueprintValidator()
+    yaml_file = tmp_path / "non_scalar.yaml"
+    yaml_file.write_text("item: !input [a, b]", encoding="utf-8")
+    data, issues = validator.load_yaml(yaml_file)
+    assert data is not None
+    assert data["item"] == InputRef("")

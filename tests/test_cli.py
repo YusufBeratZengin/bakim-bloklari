@@ -90,7 +90,7 @@ def test_cli_list_with_invalid_yaml(tmp_path: Path, capsys: pytest.CaptureFixtur
 
 
 def test_cli_inspect_success(capsys: pytest.CaptureFixture[str]) -> None:
-    code = main(["inspect", "morning_inactivity.yaml"])
+    code = main(["inspect", "morning_inactivity"])
     assert code == 0
     captured = capsys.readouterr()
     assert "Blueprint: morning_inactivity.yaml" in captured.out
@@ -133,3 +133,110 @@ def test_cli_install_invalid_source(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert code == 1
     captured = capsys.readouterr()
     assert "Source blueprints directory not found" in captured.err
+
+
+def test_cli_validate_warning_prints_issue(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bp_file = tmp_path / "custom.yaml"
+    bp_file.write_text(
+        """blueprint:
+  name: "Custom Selector Warning Test"
+  description: "Testing blueprint validation printing of warnings."
+  domain: automation
+  input:
+    custom_in:
+      name: "Custom In"
+      selector:
+        unknown_selector_kind: {}
+trigger:
+  - platform: time
+    at: "10:00:00"
+condition:
+  - condition: template
+    value_template: "{{ not is_state('s', 'unavailable') and not is_state('s', 'unknown') }}"
+action:
+  - service: notify.notify
+""",
+        encoding="utf-8",
+    )
+    code = main(["validate", str(bp_file)])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.out
+    assert "unknown_selector_kind" in captured.out
+
+
+def test_cli_simulate_failure_reporting(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from bakim_bloklari.models import ScenarioResult
+    from bakim_bloklari.scenarios import ScenarioSuite
+
+    def mock_run_all(self: ScenarioSuite) -> list[ScenarioResult]:
+        return [
+            ScenarioResult(
+                scenario_id="SCENARIO-FAIL",
+                name="Failing Scenario",
+                passed=False,
+                logs=["log line 1"],
+                error_message="Simulated error reason",
+            )
+        ]
+
+    monkeypatch.setattr(ScenarioSuite, "run_all", mock_run_all)
+    code = main(["simulate", "-v"])
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "FAIL" in captured.out
+    assert "ERROR: Simulated error reason" in captured.out
+    assert "log line 1" in captured.out
+    assert "One or more scenarios failed." in captured.err
+
+
+def test_cli_inspect_empty_desc_and_no_selector(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bakim_bloklari.models import BlueprintDefinition
+    from bakim_bloklari.schema import BlueprintValidator
+
+    fake_file = tmp_path / "fake.yaml"
+    fake_file.write_text("blueprint:\n  name: Fake\n", encoding="utf-8")
+
+    fake_bp = BlueprintDefinition(
+        path=fake_file,
+        name="Fake Blueprint",
+        description="",
+        domain="automation",
+        inputs={"non_dict_input": "scalar_value"},
+        variables={},
+        mode="single",
+        triggers=[],
+        conditions=[],
+        actions=[],
+        raw={},
+    )
+    monkeypatch.setattr(BlueprintValidator, "parse_blueprint", lambda self, p: fake_bp)
+    code = main(["inspect", "fake.yaml", "--blueprints-dir", str(tmp_path)])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Blueprint: fake.yaml" in captured.out
+    assert "non_dict_input: scalar_value" in captured.out
+
+
+def test_cli_get_default_blueprints_dir_fallbacks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from bakim_bloklari import cli
+
+    # Change cwd to tmp_path where blueprints dir does not exist
+    monkeypatch.chdir(tmp_path)
+    # Result should resolve to package-relative candidate
+    found = cli.get_default_blueprints_dir()
+    assert found.is_dir()
+
+    # When both don't exist, returns candidate
+    fake_cli_file = tmp_path / "pkg" / "src" / "cli.py"
+    monkeypatch.setattr(cli, "__file__", str(fake_cli_file))
+    fallback = cli.get_default_blueprints_dir()
+    assert fallback == tmp_path / "blueprints" / "automation" / "bakim_bloklari"
