@@ -456,9 +456,9 @@ class ScenarioSuite:
         )
         sim.set_time(datetime(2026, 11, 3, 9, 30, 0))
         sim.set_state("input_boolean.elder_alert", "on")
-        sim.set_state("event.bedside_button", "single_press")
+        sim.set_state("event.bedside_button", "idle")
 
-        # Single press event triggered
+        # Single press: the event entity moves from idle to single_press
         sim.process_state_change("event.bedside_button", "single_press")
         passed = (len(sim.action_history) == 1) and (
             sim.action_history[0].action_type == "input_boolean.turn_off"

@@ -84,6 +84,37 @@ def test_acknowledgement_during_second_window_stops_caregiver_alarm() -> None:
     assert sim.current_time == datetime(2026, 11, 3, 9, 7, 0)
 
 
+def test_button_event_acknowledgement_stops_escalation() -> None:
+    """Regression: an event-domain button press must count as an acknowledgement.
+
+    The blueprint advertises button/event entities for ``ack_entity``, but a press
+    only changes the event state (``idle`` -> ``single_press``); it never becomes
+    ``on``. Before the fix the pipeline ignored the press and paged the caregiver.
+    """
+    sim = _sim("event.bedside_button")
+    sim.set_state("event.bedside_button", "idle")
+    sim.schedule_state("event.bedside_button", "single_press", after_minutes=1)
+
+    sim.process_state_change("input_boolean.care_alert", "on")
+
+    assert _services(sim) == ["media_player.play_media"]
+    assert sim.current_time == datetime(2026, 11, 3, 9, 1, 0)
+
+
+def test_stale_ack_value_does_not_stop_the_pipeline() -> None:
+    """A wait observes transitions: an ack left 'on' from earlier is not a fresh answer."""
+    sim = _sim("input_boolean.resident_ack")
+    sim.set_state("input_boolean.resident_ack", "on")
+
+    sim.process_state_change("input_boolean.care_alert", "on")
+
+    assert _services(sim) == [
+        "media_player.play_media",
+        "notify.resident_phone",
+        "notify.caregiver_critical",
+    ]
+
+
 def test_pipeline_without_ack_entity_uses_two_timed_windows() -> None:
     sim = _sim("")
     sim.process_state_change("input_boolean.care_alert", "on")

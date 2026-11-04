@@ -48,12 +48,16 @@ blueprint:
         entity:
           domain: input_boolean
     ok_button:
-      name: Check-in / Reset Button (Optional)
-      description: Entity used to acknowledge morning check-in or reset alarms.
+      name: Morning Check-in Flag (Optional)
+      description: >-
+        Boolean helper that is "on" once the resident confirmed the morning check-in
+        (e.g. switched on by the "I Am OK" button blueprint). When it is on at check
+        time the alert is skipped. A momentary button cannot be used here: its press is
+        gone by check time, so wire the button to a boolean helper instead.
       default: ""
       selector:
         entity:
-          domain: [input_boolean, binary_sensor, event]
+          domain: [input_boolean, binary_sensor]
     notify_action:
       name: Escalation Notification Action
       description: Action sequence to run when no morning activity is detected.

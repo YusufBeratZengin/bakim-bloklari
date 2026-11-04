@@ -42,8 +42,12 @@ class HomeAssistantSimulator:
       * time triggers (``platform: time``), matched against the simulator clock,
       * state triggers including ``for:`` durations, evaluated on a virtual clock,
       * ``choose`` / ``delay`` / ``wait_for_trigger`` actions, with waits that poll
-        template and state triggers minute by minute,
+        template and state triggers minute by minute and expose ``wait.completed``,
       * Jinja conditions rendered through :class:`HomeAssistantJinjaEnvironment`.
+
+    State triggers ignore non-changes (as Home Assistant does). Inside a wait, a ``to:``
+    trigger matches the current state, while a ``not_to:``/bare trigger only matches a
+    change observed after the wait started.
 
     Not simulated: real device latency, metered-time templates, ``repeat``/``parallel``
     blocks, and MQTT/webhook events. Scenarios rely only on the supported subset.
@@ -62,6 +66,8 @@ class HomeAssistantSimulator:
         self.logs: list[str] = []
         self._scheduled_states: list[_ScheduledState] = []
         self._pending_triggers: list[_PendingTrigger] = []
+        #: Mirrors Home Assistant's ``wait`` variable after ``wait_for_trigger``.
+        self._wait: dict[str, Any] = {"completed": False, "trigger": None, "remaining": None}
 
     def _resolve_variables(self) -> dict[str, Any]:
         """Resolve blueprint variable mappings against resolved inputs."""
@@ -193,17 +199,25 @@ class HomeAssistantSimulator:
         """Apply a state change and fire the blueprint's matching state triggers.
 
         This is the realistic entry point: unlike :meth:`trigger_state_change` it
-        honours ``entity_id``, ``to`` and ``for`` trigger filters.
+        honours ``entity_id`` (single value or list), ``to`` and ``for`` trigger
+        filters, and it ignores writes that do not change the state - Home Assistant
+        only evaluates state triggers on an actual transition.
         """
         from_state = self.jinja.get_state_val(entity_id)
+        if str(from_state).lower() == str(new_state).lower():
+            self.log(
+                f"No state change for '{entity_id}' (still '{new_state}'): "
+                "state triggers are not evaluated"
+            )
+            return False
+
         ent = self.set_state(entity_id, new_state)
         fired = False
 
         for trig in self.blueprint.triggers:
             if not isinstance(trig, dict) or trig.get("platform") != "state":
                 continue
-            trigger_entity = self._resolve_val(trig.get("entity_id"))
-            if trigger_entity != entity_id:
+            if entity_id not in self._resolve_entities(trig.get("entity_id")):
                 continue
             expected = trig.get("to")
             if expected is not None and str(expected).lower() != str(new_state).lower():
@@ -314,6 +328,7 @@ class HomeAssistantSimulator:
         return True
 
     def _run_automation(self, trigger_ctx: dict[str, Any]) -> bool:
+        self._wait = {"completed": False, "trigger": None, "remaining": None}
         if not self.evaluate_all_conditions(trigger_ctx):
             return False
         self._execute_actions(self.blueprint.actions, trigger_ctx)
@@ -399,31 +414,60 @@ class HomeAssistantSimulator:
                 self._record_action(act)
 
     def _execute_wait_for_trigger(self, act: dict[str, Any], trigger_ctx: dict[str, Any]) -> None:
-        """Wait for a trigger, polling once per simulated minute until the timeout."""
+        """Wait for a trigger, polling once per simulated minute until the timeout.
+
+        The observed states at the start of the wait are recorded so that triggers
+        without an explicit ``to:`` only match a *new* change, and ``wait.completed``
+        is published for the following steps (as in Home Assistant).
+        """
         specs = act.get("wait_for_trigger") or []
         timeout = self._duration_to_timedelta(act.get("timeout"), default_minutes=5)
         if timeout is None:
             timeout = timedelta(minutes=5)
         start = self.current_time
         deadline = start + timeout
+        baseline = self._wait_baseline(specs)
 
-        matched = self._evaluate_wait_triggers(specs, trigger_ctx)
-        while not matched and self.current_time < deadline:
+        matched_spec = self._evaluate_wait_triggers(specs, trigger_ctx, baseline)
+        while matched_spec is None and self.current_time < deadline:
             step = min(timedelta(minutes=1), deadline - self.current_time)
             self._advance_to(self.current_time + step)
-            matched = self._evaluate_wait_triggers(specs, trigger_ctx)
+            matched_spec = self._evaluate_wait_triggers(specs, trigger_ctx, baseline)
 
+        matched = matched_spec is not None
         elapsed = (self.current_time - start).total_seconds() / 60
+        self._wait = {
+            "completed": matched,
+            "trigger": matched_spec,
+            "remaining": max(deadline - self.current_time, timedelta(0)),
+        }
         self.log(f"wait_for_trigger finished (matched={matched}, elapsed={elapsed:.0f}m)")
 
-    def _evaluate_wait_triggers(self, specs: Any, trigger_ctx: dict[str, Any]) -> bool:
-        """Return True when any trigger specification currently holds."""
-        if isinstance(specs, dict):
-            specs = [specs]
-        if not isinstance(specs, list):
-            return False
+    def _wait_baseline(self, specs: Any) -> dict[str, str]:
+        """Snapshot the state of every entity a wait trigger watches."""
+        spec_list = [specs] if isinstance(specs, dict) else specs
+        baseline: dict[str, str] = {}
+        if not isinstance(spec_list, list):
+            return baseline
+        for spec in spec_list:
+            if not isinstance(spec, dict) or spec.get("platform") != "state":
+                continue
+            for entity_id in self._resolve_entities(spec.get("entity_id")):
+                baseline[entity_id] = self.jinja.get_state_val(entity_id)
+        return baseline
 
-        for spec in specs:
+    def _evaluate_wait_triggers(
+        self,
+        specs: Any,
+        trigger_ctx: dict[str, Any],
+        baseline: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the first trigger specification that holds, else ``None``."""
+        spec_list = [specs] if isinstance(specs, dict) else specs
+        if not isinstance(spec_list, list):
+            return None
+
+        for spec in spec_list:
             if not isinstance(spec, dict):
                 continue
             platform = spec.get("platform")
@@ -436,22 +480,39 @@ class HomeAssistantSimulator:
                         self._substitute_inputs(tmpl),
                         extra_vars=self._template_context(trigger_ctx),
                     ):
-                        return True
+                        return spec
                 except Exception as exc:
                     self.log(f"Error evaluating wait template: {exc}")
                 continue
             if platform == "state":
-                ent_id = self._resolve_val(spec.get("entity_id"))
                 expected = spec.get("to")
-                current = self.jinja.get_state_val(str(ent_id))
-                if current in ("unknown", "unavailable"):
-                    continue
-                if expected is None or str(current).lower() == str(expected).lower():
-                    return True
-        return False
+                forbidden = spec.get("not_to")
+                if isinstance(forbidden, list):
+                    forbidden_states = [str(item).lower() for item in forbidden]
+                elif forbidden is None:
+                    forbidden_states = []
+                else:
+                    forbidden_states = [str(forbidden).lower()]
+
+                for entity_id in self._resolve_entities(spec.get("entity_id")):
+                    current = self.jinja.get_state_val(entity_id)
+                    if current in ("unknown", "unavailable"):
+                        continue
+                    # A wait only observes changes: a value that was already present
+                    # when the wait started does not satisfy the trigger.
+                    if baseline is None or baseline.get(entity_id) == current:
+                        continue
+                    if expected is not None:
+                        if str(current).lower() == str(expected).lower():
+                            return spec
+                        continue
+                    if str(current).lower() in forbidden_states:
+                        continue
+                    return spec
+        return None
 
     def _template_context(self, trigger_ctx: dict[str, Any]) -> dict[str, Any]:
-        context: dict[str, Any] = {"trigger": trigger_ctx}
+        context: dict[str, Any] = {"trigger": trigger_ctx, "wait": self._wait}
         context.update(self.inputs)
         context.update(self.resolved_variables)
         return context
@@ -473,6 +534,15 @@ class HomeAssistantSimulator:
         if isinstance(val, InputRef):
             return self.inputs.get(val.key)
         return val
+
+    def _resolve_entities(self, val: Any) -> list[str]:
+        """Normalise a trigger ``entity_id`` (string, list, or ``!input``) to a list."""
+        resolved = self._resolve_val(val)
+        if resolved is None:
+            return []
+        if isinstance(resolved, (list, tuple, set)):
+            return [str(item) for item in resolved]
+        return [str(resolved)]
 
     @staticmethod
     def _normalize_time(value: Any) -> str:

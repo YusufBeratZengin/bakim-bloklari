@@ -3,17 +3,22 @@ blueprint:
   description: >
     A graduated response pipeline designed to eliminate alert fatigue for families.
     Stage 1: Plays an inquiry chime or voice prompt on a local smart speaker ("Are you okay?").
-    Stage 2: Waits for a local confirmation (button press or motion). Only if the resident does
-    not answer, sends a polite push notification to the resident's mobile phone and waits again.
+    Stage 2: Waits for a local acknowledgement (a switch turning on, or a button / event entity
+    being pressed). Only if the resident does not answer, sends a polite push notification to
+    the resident's mobile phone and waits again.
     Stage 3: If still unacknowledged after the second window, escalates to a high-priority
     critical alarm to designated family members and caregivers.
     Acknowledgement at any stage stops the pipeline, so caregivers are never paged when the
-    resident already answered.
+    resident already answered. An acknowledgement can be a boolean helper switching to "on"
+    (recommended, e.g. set by the "I Am OK" button blueprint) or a press on a button/event
+    entity; an event press is recognised by the state change during the wait window.
 
     TR: Kademeli acil durum hattı. Önce evdeki hoparlörden "İyi misiniz?" uyarısı verilir,
     ardından yerel onay beklenir. Onay gelmezse yaşlının telefonuna nazik bir bildirim gönderilir
     ve yeniden beklenir. Hâlâ onay yoksa bakıcıya kritik alarm iletilir. Herhangi bir aşamadaki
-    onay sonraki aşamaları durdurur; gereksiz uyarı yorgunluğu oluşmaz.
+    onay sonraki aşamaları durdurur; gereksiz uyarı yorgunluğu oluşmaz. Onay, bir boolean
+    yardımcı varlığın "on" olması ya da bekleme penceresi içinde bir düğme/olay varlığına
+    basılması olabilir.
   domain: automation
   input:
     trigger_boolean:
@@ -23,8 +28,11 @@ blueprint:
         entity:
           domain: [input_boolean, alert]
     ack_entity:
-      name: Acknowledgment Button / Switch (Optional)
-      description: Button or boolean the resident can press to acknowledge and cancel the alert.
+      name: Acknowledgment Switch or Button (Optional)
+      description: >-
+        Boolean helper that turns "on" when the resident acknowledges, or a button/event
+        entity whose press is counted as an acknowledgement. Leave empty to use two timed
+        windows without acknowledgement.
       default: ""
       selector:
         entity:
@@ -80,7 +88,10 @@ action:
   - choose: []
     default: !input speaker_action
 
-  # Stage 2a: wait for the resident's local acknowledgement
+  # Stage 2a: wait one response window for a local acknowledgement. A boolean helper counts
+  # when it turns "on"; a button / event entity counts on any state change other than
+  # "off", "unavailable", "unknown" or an empty value (event presses look like
+  # "single_press", "double_press", ...). `wait.completed` records whether it happened.
   - choose:
       - conditions:
           - condition: template
@@ -89,10 +100,12 @@ action:
               {{ ack is defined and ack != '' }}
         sequence:
           - wait_for_trigger:
-              - platform: template
-                value_template: >-
-                  {% set ack = ack_entity_var %}
-                  {{ ack and is_state(ack, 'on') }}
+              - platform: state
+                entity_id: !input ack_entity
+                to: "on"
+              - platform: state
+                entity_id: !input ack_entity
+                not_to: ["off", "unavailable", "unknown", ""]
             timeout:
               minutes: !input wait_resident_minutes
             continue_on_timeout: true
@@ -100,13 +113,14 @@ action:
       - delay:
           minutes: !input wait_resident_minutes
 
-  # Stage 2b: only if the resident has not answered, ping their phone and wait again
+  # Stage 2b: only if the first window expired without an acknowledgement, ping the
+  # resident's phone and wait a second window. Without a configured ack entity the second
+  # window is a plain delay, so the timing is unchanged.
   - choose:
       - conditions:
           - condition: template
             value_template: >-
-              {% set ack = ack_entity_var %}
-              {{ not (ack and ack != '' and is_state(ack, 'on')) }}
+              {{ not (wait.completed | default(false)) }}
         sequence:
           - choose: []
             default: !input resident_notify_action
@@ -118,10 +132,12 @@ action:
                       {{ ack is defined and ack != '' }}
                 sequence:
                   - wait_for_trigger:
-                      - platform: template
-                        value_template: >-
-                          {% set ack = ack_entity_var %}
-                          {{ ack and is_state(ack, 'on') }}
+                      - platform: state
+                        entity_id: !input ack_entity
+                        to: "on"
+                      - platform: state
+                        entity_id: !input ack_entity
+                        not_to: ["off", "unavailable", "unknown", ""]
                     timeout:
                       minutes: !input wait_resident_minutes
                     continue_on_timeout: true
@@ -134,6 +150,5 @@ action:
               - conditions:
                   - condition: template
                     value_template: >-
-                      {% set ack = ack_entity_var %}
-                      {{ not (ack and ack != '' and is_state(ack, 'on')) }}
+                      {{ not (wait.completed | default(false)) }}
                 sequence: !input caregiver_notify_action

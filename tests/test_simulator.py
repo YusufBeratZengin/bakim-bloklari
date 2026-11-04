@@ -435,6 +435,39 @@ def test_state_trigger_for_duration_cancelled_on_early_state_change() -> None:
     assert any("cancelled" in line for line in sim.logs)
 
 
+def test_state_trigger_ignores_writes_without_a_transition() -> None:
+    """A write of the same state must not be treated as a Home Assistant trigger."""
+    bp = make_dummy_blueprint(
+        triggers=[{"platform": "state", "entity_id": "binary_sensor.occupancy", "to": "on"}]
+    )
+    sim = HomeAssistantSimulator(bp)
+    sim.set_time(datetime(2026, 11, 3, 8, 0, 0))
+    sim.set_state("binary_sensor.occupancy", "on")
+
+    assert sim.process_state_change("binary_sensor.occupancy", "on") is False
+    assert sim.action_history == []
+    assert any("No state change" in line for line in sim.logs)
+
+
+def test_state_trigger_matches_entity_id_list() -> None:
+    bp = make_dummy_blueprint(
+        triggers=[
+            {
+                "platform": "state",
+                "entity_id": ["binary_sensor.kitchen", "binary_sensor.hall"],
+                "to": "on",
+            }
+        ]
+    )
+    sim = HomeAssistantSimulator(bp)
+    sim.set_time(datetime(2026, 11, 3, 8, 0, 0))
+    sim.set_state("binary_sensor.kitchen", "off")
+    sim.set_state("binary_sensor.hall", "off")
+
+    assert sim.process_state_change("binary_sensor.hall", "on") is True
+    assert len(sim.action_history) == 1
+
+
 def test_time_trigger_matches_simulator_clock() -> None:
     bp = make_dummy_blueprint(triggers=[{"platform": "time", "at": "10:00:00"}])
     sim = HomeAssistantSimulator(bp)
