@@ -101,8 +101,28 @@ def test_simulator_condition_combinators() -> None:
     }
     assert sim.evaluate_condition_item(cond_not, ctx) is True
 
-    # Unknown / unhandled condition type defaults to True
-    assert sim.evaluate_condition_item({"condition": "sun"}, ctx) is True
+    # Unsupported condition type must never silently pass; see the dedicated test below.
+    assert sim.evaluate_condition_item({"condition": "sun"}, ctx) is False
+
+
+def test_unsupported_condition_type_blocks_automation() -> None:
+    """An unknown/unhandled condition is a fail-safe no, not a silent yes.
+
+    Regression: the simulator used to fall through to ``return True`` for any
+    condition type it did not model (e.g. ``sun`` or ``numeric_state``), so a
+    blueprint whose gate the simulator cannot understand still ran its actions,
+    producing a false positive in exactly the path the project claims to verify.
+    """
+    bp = make_dummy_blueprint(
+        conditions=[{"condition": "numeric_state", "entity_id": "sensor.b", "above": 10}]
+    )
+    sim = HomeAssistantSimulator(bp)
+    sim.set_state("sensor.b", "20")
+
+    assert sim.evaluate_condition_item(bp.conditions[0], {}) is False
+    assert sim.trigger_time_check() is False
+    assert sim.action_history == []
+    assert any("numeric_state" in line and "unsupported" in line.lower() for line in sim.logs)
 
 
 def test_simulator_template_condition_error_handling() -> None:
@@ -183,8 +203,9 @@ def test_simulator_literal_variables_and_empty_template() -> None:
     )
     sim = HomeAssistantSimulator(bp)
     assert sim.resolved_variables["literal_var"] == "static_value"
-    # Empty template condition returns True
-    assert sim.evaluate_condition_item({"condition": "template", "value_template": ""}, {}) is True
+    # A template condition without a value_template is invalid in Home Assistant and is
+    # treated as unsatisfied (fail closed), never as a silent pass.
+    assert sim.evaluate_condition_item({"condition": "template", "value_template": ""}, {}) is False
 
 
 def test_simulator_trigger_event_failing_conditions() -> None:

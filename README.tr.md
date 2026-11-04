@@ -52,7 +52,7 @@ bakim-bloklari simulate
 
 ```text
 $ bakim-bloklari validate
-[bakim-bloklari v0.1.2] Validating 5 blueprint(s)...
+[bakim-bloklari v0.1.3] Validating 5 blueprint(s)...
 
 [PASS] door_left_open.yaml - Elderly Care - Exterior Door Left Open & Night Wandering (Errors: 0, Warnings: 0)
 [PASS] escalation_pipeline.yaml - Elderly Care - Multi-Stage Escalation Pipeline (Errors: 0, Warnings: 0)
@@ -64,7 +64,7 @@ $ bakim-bloklari validate
 Validation SUCCESS: All 5 blueprint(s) passed schema checks.
 
 $ bakim-bloklari simulate
-[bakim-bloklari v0.1.2] Running 12 Acceptance Scenarios against: bakim_bloklari
+[bakim-bloklari v0.1.3] Running 12 Acceptance Scenarios against: bakim_bloklari
 
 [PASS] SCENARIO-01: Morning Motion Detected Earlier in Window -> No Alarm
 [PASS] SCENARIO-02: Zero Morning Motion -> Escalation Alarm Fired
@@ -164,6 +164,10 @@ olarak küçük bir otomasyon motoru alt kümesi çalıştırır:
 - gerçek cihaz gecikmesi, Zigbee/Z-Wave ağ davranışı, MQTT/webhook/event yükleri,
 - `repeat`, `parallel`, `if/then`, `variables:` eylem adımları, `wait_template`, ana
   `trigger:` bloğunda template tetikleyicileri,
+- `template`, `state`, `and`, `or` ve `not` dışındaki koşul türleri (örneğin `sun`,
+  `numeric_state`, `zone`, `trigger`). Bunlar değerlendirilmez: simülatör onları
+  **sağlanmamış** sayar ve türü günlüğe yazar; böylece bir senaryo, hiç denetlemediği
+  bir koşul üzerinden geçemez,
 - simülatörün doldurmadığı özniteliklere bağlı şablonlar.
 
 Bu nedenle senaryolar *mantığı* (durum kapıları, çevrimdışı güvenliği, tırmanma sırası, süre
@@ -197,7 +201,7 @@ Diğer tüm işlemler yalnızca Python standart kütüphanesini kullanır.
 ## Hedef Kitle, Sınırlar ve Yasal Uyarı
 
 - **Hedef Kitle:** Yalnız yaşayan yaşlılar, aileler, bakıcılar ve Home Assistant kullanıcıları (`NEEDS_SOURCE`: küresel demografik pazar büyüklüğü ve yaşlı nüfus istatistikleri için resmî kaynak beklenmektedir).
-- **Gizlilik Bildirimi:** Tüm otomasyon mantığı ve sensör verileri %100 yerel olarak kendi Home Assistant sunucunuzda işlenir. Hiçbir hareket veya varlık verisi yerel ağınız dışına çıkmaz.
+- **Gizlilik Bildirimi:** Projenin kendisi telemetri göndermez: blueprint'ler, doğrulayıcı ve simülatör dışarıya ağ isteği atmaz, analitik içermez. Sensör değerlendirmesi kendi Home Assistant kurulumunuzda yapılır; hareket/varlık geçmişi yerel Home Assistant kayıt (recorder) veritabanında kalır (bu veritabanını, yedeklerini ve uzaktan erişimi korumak sizin sorumluluğunuzdadır). Dışarıya veri yalnızca blueprint'e *sizin* bağladığınız eylemlerle çıkar: `escalation_pipeline.yaml`, `morning_inactivity.yaml` ve diğer blueprint'ler serbest Home Assistant eylemi kabul eder. Mobil uygulama bildirimi (Nabu Casa Cloud veya üreticinin push servisi üzerinden), Telegram, e-posta ya da webhook tanımlarsanız bildirim metnine koyduğunuz veri ağınızdan çıkar ve o entegrasyonun gizlilik politikasına tabi olur. Uyarı metinlerinde tıbbi ayrıntı bulundurmayın ve her bildirim hedefini etkinleştirmeden önce gözden geçirin.
 - **Tıbbi Olmayan Cihaz Uyarısı:**
 
 > [!IMPORTANT]

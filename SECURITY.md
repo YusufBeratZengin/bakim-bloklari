@@ -25,7 +25,8 @@ You will receive an acknowledgment within 48 hours.
 
 ## Privacy & Safety Design Principles
 
-1. **Zero External Telemetry:** All blueprints and simulation tools execute 100% locally on your Home Assistant instance. No sensor states, events, or resident data ever leave your local network.
-2. **No Hardcoded Credentials:** Blueprints never request or store API tokens, account keys, or passwords. All notification targets use Home Assistant native notification services and entities.
-3. **Fail-Safe Offline Handling:** Sensors marked as `unavailable` or `unknown` are explicitly caught by conditions to avoid triggering false emergency escalations when devices reboot or battery levels drop.
-4. **Disclaimer:** `bakim-bloklari` is an open-source automation toolkit designed for ambient assistance. It is NOT a certified medical device or certified emergency response system.
+1. **No Telemetry From This Project:** The blueprints, validator and simulator contain no analytics and make no outbound network calls of their own. Sensor evaluation and scenario simulation run on your own Home Assistant instance.
+2. **Outbound Data Depends on Your Actions:** The blueprints deliberately accept free-form Home Assistant actions (`speaker_action`, `resident_notify_action`, `caregiver_notify_action`, `notify_action`). If you point those at a mobile-app push, Nabu Casa Cloud, Telegram, e-mail or a webhook, the message content leaves your network and that integration's privacy policy applies. Motion history is stored in your Home Assistant recorder database; protecting it, its backups and any remote access is the operator's responsibility.
+3. **No Hardcoded Credentials:** Blueprints never request or store API tokens, account keys, or passwords. All notification targets use Home Assistant native notification services and entities.
+4. **Fail-Safe Offline Handling:** Sensors marked as `unavailable` or `unknown` are explicitly caught by conditions to avoid triggering false emergency escalations when devices reboot or battery levels drop.
+5. **Disclaimer:** `bakim-bloklari` is an open-source automation toolkit designed for ambient assistance. It is NOT a certified medical device or certified emergency response system.

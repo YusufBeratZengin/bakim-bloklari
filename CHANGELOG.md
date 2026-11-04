@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-11-04
+
+### Fixed
+- **Unsupported conditions silently passed (`simulator.py`)**: any condition type the simulator
+  did not model (`sun`, `numeric_state`, `zone`, ...) fell through to `return True`, so a
+  blueprint gate the simulator never evaluated still ran its actions and the scenario was
+  reported as passing. Unknown condition types are now treated as unsatisfied and logged with
+  the offending type. A `template` condition without `value_template` (invalid in Home Assistant)
+  is likewise fail-closed instead of passing.
+- **Privacy wording overstated (`README.md`, `README.tr.md`, `SECURITY.md`)**: the docs claimed
+  no data ever leaves the local network, which contradicts the free-form notification actions
+  the blueprints accept. The notice now says the project itself ships no telemetry, and that
+  outbound data depends on the integrations the operator wires into those actions.
+- **Windows Python Launcher fallback (`scripts/check.sh`)**: the interpreter was stored as a
+  single string, so `py -3` was executed as one file name. It is kept as an argv array.
+
+### Tests
+- New regression `test_unsupported_condition_type_blocks_automation` (red before the fix:
+  the unsupported condition returned `True` and the action ran).
+
 ## [0.1.2] - 2026-11-04
 
 ### Fixed

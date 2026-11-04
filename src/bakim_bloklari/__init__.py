@@ -1,6 +1,6 @@
 """bakim-bloklari: Privacy-first Home Assistant blueprints and validation suite for elderly care."""
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __author__ = "Yusuf Berat Zengin"
 
 from bakim_bloklari.models import (

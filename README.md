@@ -50,7 +50,7 @@ bakim-bloklari simulate
 
 ```text
 $ bakim-bloklari validate
-[bakim-bloklari v0.1.2] Validating 5 blueprint(s)...
+[bakim-bloklari v0.1.3] Validating 5 blueprint(s)...
 
 [PASS] door_left_open.yaml - Elderly Care - Exterior Door Left Open & Night Wandering (Errors: 0, Warnings: 0)
 [PASS] escalation_pipeline.yaml - Elderly Care - Multi-Stage Escalation Pipeline (Errors: 0, Warnings: 0)
@@ -62,7 +62,7 @@ $ bakim-bloklari validate
 Validation SUCCESS: All 5 blueprint(s) passed schema checks.
 
 $ bakim-bloklari simulate
-[bakim-bloklari v0.1.2] Running 12 Acceptance Scenarios against: bakim_bloklari
+[bakim-bloklari v0.1.3] Running 12 Acceptance Scenarios against: bakim_bloklari
 
 [PASS] SCENARIO-01: Morning Motion Detected Earlier in Window -> No Alarm
 [PASS] SCENARIO-02: Zero Morning Motion -> Escalation Alarm Fired
@@ -162,6 +162,10 @@ and a deliberately small subset of the automation engine:
 - real device latency, Zigbee/Z-Wave mesh behaviour, MQTT/webhook/event payloads,
 - `repeat`, `parallel`, `if/then`, `variables:` action steps, `wait_template`, template
   triggers in the main `trigger:` block,
+- condition types other than `template`, `state`, `and`, `or` and `not` (for example
+  `sun`, `numeric_state`, `zone` or `trigger`). They are not evaluated: the simulator
+  treats them as **unsatisfied** and logs the unsupported type, so a scenario can never
+  pass on a gate it did not actually check,
 - templates that depend on attributes this simulator does not populate.
 
 Scenarios therefore prove *logic* (state gating, offline safety, escalation order, timing
@@ -196,7 +200,7 @@ All other functionality relies exclusively on the Python standard library.
 ## Target Audience & Limitations
 
 - **Target Audience:** Families supporting aging parents, independent elderly individuals (`NEEDS_SOURCE` for global demographic market size), caregivers, and Home Assistant smart home enthusiasts.
-- **Privacy Notice:** 100% of automation logic and sensor processing runs entirely locally on your Home Assistant server. No movement logs, presence timestamps, or personal data leave your premises.
+- **Privacy Notice:** This project adds no telemetry of its own: the blueprints, the validator and the simulator make no outbound network calls and contain no analytics. Sensor evaluation happens on your own Home Assistant instance, and motion/presence history stays in your local Home Assistant recorder database (securing that database, its backups and remote access is your responsibility). Outbound traffic happens only through the actions *you* wire into a blueprint: `escalation_pipeline.yaml`, `morning_inactivity.yaml` and the other blueprints accept free-form Home Assistant actions, so if you configure a mobile-app push (which relays through Nabu Casa Cloud or your vendor's push service), Telegram, e-mail or a webhook, the data you put in that message leaves your network and is governed by that integration's privacy policy. Keep alert texts free of medical details and review each notification target before enabling it.
 - **Non-Medical Disclaimer:**
 
 > [!IMPORTANT]

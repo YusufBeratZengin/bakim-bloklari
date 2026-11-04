@@ -282,7 +282,11 @@ class HomeAssistantSimulator:
         if cond_type == "template":
             tmpl = cond.get("value_template", "")
             if not tmpl:
-                return True
+                self.log(
+                    "Template condition without 'value_template': treated as False "
+                    "(Home Assistant rejects this configuration)"
+                )
+                return False
             resolved_tmpl = self._substitute_inputs(tmpl)
             try:
                 res = self.jinja.evaluate_condition_template(
@@ -316,7 +320,14 @@ class HomeAssistantSimulator:
             subs = cond.get("conditions", [])
             return not any(self.evaluate_condition_item(c, trigger_ctx) for c in subs)
 
-        return True
+        # Fail closed: a condition the simulator does not model must never count as
+        # satisfied. Silently returning True here would run the blueprint's actions
+        # and report a passing scenario for logic the simulator never evaluated.
+        self.log(
+            f"Unsupported condition type {cond_type!r}: treated as False "
+            "(the simulator cannot prove this gate)"
+        )
+        return False
 
     def evaluate_all_conditions(self, trigger_ctx: dict[str, Any]) -> bool:
         """Evaluate all top-level conditions for the blueprint."""
