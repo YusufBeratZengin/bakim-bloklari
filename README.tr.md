@@ -5,13 +5,15 @@
 [![CI](https://github.com/yusufberatzengin/bakim-bloklari/actions/workflows/ci.yml/badge.svg)](https://github.com/yusufberatzengin/bakim-bloklari/actions)
 [![Lisans: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
-[![Kapsama: %99](https://img.shields.io/badge/coverage-99%25-brightgreen.svg)](scripts/check.sh)
+[![Kapsama: %96](https://img.shields.io/badge/coverage-96%25-brightgreen.svg)](scripts/check.sh)
 
 [English README](README.md)
 
 `bakim-bloklari`, yalnız yaşayan yaşlıların bağımsız ve güvenli bir yaşam sürmesini destekleyen, ortam farkındalığına dayalı hazır ev otomasyonları (blueprint) sunar. Mahremiyeti zedeleyen kameralar veya ortam dinleyen mikrofonlar kullanmadan; pasif ortam sensörlerini (PIR hareket dedektörleri, mmWave mikro-varlık radarları ve manyetik kapı kontaklarını) izleyerek sabah hareketsizliğini, uzun banyo sürelerini veya gece kapı açılmalarını tespit eder ve gerektiğinde aileye kademeli uyarı gönderir.
 
-Paket, Home Assistant blueprint şemalarını doğrulayan ve **çevrimdışı ya da arızalı sensörlerin asla sahte acil durum alarmı üretmemesini** garanti eden 12 senaryoluk Python durum motoru simülatörünü içerir.
+Paket, blueprint yapısını (üst veri, tanımlı girdiler, tetikleyiciler, eylemler ve Jinja sözdizimi) doğrulayan ve **çevrimdışı ya da arızalı sensörlerin sahte acil durum alarmı üretmemesini** sınayan 12 senaryoluk Python durum motoru simülatörünü içerir.
+
+> Doğrulayıcı, bu projenin dayandığı sözleşmeyi denetler; **Home Assistant çekirdeğinin resmî doğrulayıcısı değildir**. Buradan geçmek, HA'nın blueprint'i yükleyeceğini garanti etmez. Ayrıntılar için [sınırlar](#simülatörün-kapsamı-ve-sınırları) bölümüne bakın.
 
 ---
 
@@ -31,6 +33,10 @@ pip install bakim-bloklari
 bakim-bloklari install --target ~/.homeassistant
 ```
 
+`install` yerel düzenlemelerinizi sessizce ezmez: aynı dosyalar "değişmedi" olarak bildirilir,
+farklı dosyalar atlanır. Üzerine yazmak için `--force`, önce zaman damgalı `.bak` kopyası
+almak için `--backup` kullanın.
+
 ### 2. CLI ile Doğrulama ve Kuru Çalıştırma (Simülasyon)
 Gerçek donanıma dokunmadan blueprint'leri doğrulayabilir ve 12 senaryo testini çalıştırabilirsiniz:
 
@@ -46,7 +52,7 @@ bakim-bloklari simulate
 
 ```text
 $ bakim-bloklari validate
-[bakim-bloklari v0.1.0] Validating 5 blueprint(s)...
+[bakim-bloklari v0.1.1] Validating 5 blueprint(s)...
 
 [PASS] door_left_open.yaml - Elderly Care - Exterior Door Left Open & Night Wandering (Errors: 0, Warnings: 0)
 [PASS] escalation_pipeline.yaml - Elderly Care - Multi-Stage Escalation Pipeline (Errors: 0, Warnings: 0)
@@ -58,9 +64,9 @@ $ bakim-bloklari validate
 Validation SUCCESS: All 5 blueprint(s) passed schema checks.
 
 $ bakim-bloklari simulate
-[bakim-bloklari v0.1.0] Running 12 Acceptance Scenarios against: bakim_bloklari
+[bakim-bloklari v0.1.1] Running 12 Acceptance Scenarios against: bakim_bloklari
 
-[PASS] SCENARIO-01: Normal Morning Motion Detected -> No Alarm
+[PASS] SCENARIO-01: Morning Motion Detected Earlier in Window -> No Alarm
 [PASS] SCENARIO-02: Zero Morning Motion -> Escalation Alarm Fired
 [PASS] SCENARIO-03: Resident Away (not_home) -> Alarm Suppressed
 [PASS] SCENARIO-04: Vacation Mode Active -> Alarm Suppressed
@@ -84,10 +90,10 @@ All elderly care scenarios verified successfully.
 
 | Blueprint | Açıklama | Desteklenen Donanımlar |
 | --------- | -------- | ---------------------- |
-| [`morning_inactivity.yaml`](blueprints/automation/bakim_bloklari/morning_inactivity.yaml) | Belirlenen sabah saat aralığında (ör. 06:30 - 10:00) evin ortak alanlarında hareket olup olmadığını inceler. Yaşlı evdeyken hareket algılanmazsa kademeli alarm başlatır. | PIR hareket dedektörleri, mmWave varlık radarları, kapı kontakları. |
+| [`morning_inactivity.yaml`](blueprints/automation/bakim_bloklari/morning_inactivity.yaml) | Sabah penceresi (ör. 06:30 - 10:00) boyunca hareketi değerlendirir. Kontrol anında değil, pencere içindeki herhangi bir hareket aktivite sayılır. Yaşlı evdeyken hiç hareket yoksa kademeli alarm başlatır. | PIR hareket dedektörleri, mmWave varlık radarları, kapı kontakları. |
 | [`prolonged_bathroom.yaml`](blueprints/automation/bakim_bloklari/prolonged_bathroom.yaml) | Banyo ve ıslak hacim varlığını izleyerek kapalı kapı ardındaki düşme veya tıbbi kaza durumlarında erken uyarı verir. Varlık süresi eşiği (ör. 30 dk) aşıldığında alarm üretir. | mmWave radarlar (Aqara FP2, LD2410), PIR sensörleri, banyo kapı sensörleri. |
 | [`door_left_open.yaml`](blueprints/automation/bakim_bloklari/door_left_open.yaml) | Gündüz saatlerinde dış kapı açık kaldığında (>5 dk) hatırlatır; gece saatlerinde (23:00 - 06:00) açılırsa uyurgezerlik ve gece dolaşma riskine karşı anında aileye acil bildirim atar. | Manyetik kapı kontak sensörleri (Zigbee / Z-Wave / Matter). |
-| [`escalation_pipeline.yaml`](blueprints/automation/bakim_bloklari/escalation_pipeline.yaml) | Uyarı yorgunluğunu önleyen tırmanma protokolü: Önce ev içi akıllı hoparlörden sesli uyarı ("İyi misiniz?"), ardından telefona nazik bildirim, yanıt alınamazsa aileye kritik acil durum alarmı iletir. | Medya oynatıcı / akıllı hoparlör, Home Assistant Companion mobil uygulaması. |
+| [`escalation_pipeline.yaml`](blueprints/automation/bakim_bloklari/escalation_pipeline.yaml) | Uyarı yorgunluğunu önleyen tırmanma protokolü: Önce ev içi akıllı hoparlörden sesli uyarı ("İyi misiniz?") verilir ve onay beklenir. Onay gelmezse telefona nazik bildirim gönderilir ve yeniden beklenir; ikinci pencere de onaysız geçerse aileye kritik acil durum alarmı iletilir. | Medya oynatıcı / akıllı hoparlör, Home Assistant Companion mobil uygulaması. |
 | [`ok_button.yaml`](blueprints/automation/bakim_bloklari/ok_button.yaml) | Yatak başı kablosuz buton yönetimi. Tek basış "İyiyim" onayı vererek aktif alarmları sıfırlar; çift basış veya basılı tutma doğrudan bakıcıya acil durum çağrısı gönderir. | Zigbee / Matter kablosuz butonlar, akıllı anahtarlar. |
 
 ---
@@ -126,15 +132,50 @@ bakim-bloklari list
 # Bir blueprint'in girdilerini ve varsayılanlarını ayrıntılı incele
 bakim-bloklari inspect morning_inactivity
 
-# Blueprint YAML şemasını ve güvenlik kurallarını doğrula
+# Blueprint yapısını, tanımlı girdileri ve Jinja sözdizimini doğrula
 bakim-bloklari validate [dosya_veya_dizin]
 
 # 12 deterministik senaryo testini simülatörde çalıştır
 bakim-bloklari simulate [-v]
 
 # Blueprint'leri Home Assistant yapılandırma klasörüne yükle
-bakim-bloklari install --target /path/to/homeassistant
+bakim-bloklari install --target /path/to/homeassistant [--force | --backup]
 ```
+
+---
+
+## Simülatörün Kapsamı ve Sınırları
+
+Simülatör bir onay aracıdır, Home Assistant çalışma zamanı değildir. Sanal bir saat ve bilinçli
+olarak küçük bir otomasyon motoru alt kümesi çalıştırır:
+
+**Desteklenen**
+- simülatör saatine göre eşleşen zaman tetikleyicileri,
+- `for:` süreli durum tetikleyicileri (varlık durumdan çıkarsa iptal edilir),
+- `choose`, `delay` ve `wait_for_trigger` (dakika dakika yoklanır; bekleme sırasında gelen onay
+  sonraki aşamayı durdurur),
+- projenin kullandığı HA Jinja yardımcıları: `last_changed` içeren `states[...]`, `is_state`,
+  `state_attr`, `now`, `today_at`, `as_timestamp`, `as_datetime`, `iif`.
+
+**Desteklenmeyen**
+- gerçek cihaz gecikmesi, Zigbee/Z-Wave ağ davranışı, MQTT/webhook/event yükleri,
+- `repeat`, `parallel`, `if/then`, `wait_template`, ana `trigger:` bloğunda template tetikleyicileri,
+- simülatörün doldurmadığı özniteliklere bağlı şablonlar.
+
+Bu nedenle senaryolar *mantığı* (durum kapıları, çevrimdışı güvenliği, tırmanma sırası, süre
+eşikleri) kanıtlar; belirli bir Home Assistant sürümünün YAML'ı yükleyeceğini değil. Üretimde
+kullanmadan önce kendi HA örneğinizde **Geliştirici Araçları → YAML → Yapılandırmayı Denetle**
+ile doğrulayın.
+
+---
+
+## Yerelleştirme
+
+Home Assistant blueprint şeması alan bazında çeviri desteklemez: arayüzdeki ad ve açıklamalar
+YAML'da ne yazıyorsa odur. Bu nedenle paketteki her blueprint'in açıklaması İngilizce metnin
+ardından Türkçe (`TR:`) bir özet içerir; [`docs/blueprints.tr.md`](docs/blueprints.tr.md)
+alan alan Türkçe başvuru ve örnek varlık eşleşmeleri sunar. Arayüz etiketleri İngilizce kalır,
+çünkü HA'nın bugün desteklediği yol budur.
 
 ---
 

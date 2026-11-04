@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-11-04
+
+### Fixed
+- **Morning inactivity false alarms (`morning_inactivity.yaml`)**: the check now treats any
+  sensor activity between `morning_start_time` and `check_time` as activity, using each
+  sensor's `last_changed`. Previously only the instantaneous state at check time counted, so a
+  resident who moved at 07:00 and sat still was reported as inactive at 10:00.
+- **Escalation order (`escalation_pipeline.yaml`)**: the pipeline now matches its description:
+  speaker prompt → wait for acknowledgement → resident phone notification → wait again →
+  caregiver critical alarm. Acknowledgement at either window stops the remaining stages; the
+  caregiver alarm can no longer fire before the resident notification.
+- **`install` overwrite safety (`cli.py`)**: existing files are never overwritten silently.
+  Identical files are reported unchanged; differing files are skipped and exit non-zero unless
+  `--force` is passed, and `--backup` writes a timestamped `.bak` copy before replacing.
+
+### Changed
+- **Validator honesty (`schema.py`, README, CHANGELOG)**: claims narrowed to what the tool does.
+  It is a structural validator (metadata, declared inputs, trigger platforms, action shapes,
+  Jinja syntax, unknown automation mode, undeclared `!input` references), not the official
+  Home Assistant core validator.
+- **Offline-sensor guard detection**: the safety warning now inspects `condition:` templates
+  only. Mentioning "unavailable"/"unknown" in a description no longer silences the warning.
+- **Simulator executes blueprint triggers** instead of scenarios invoking actions directly:
+  time triggers are matched against the clock, `for:` durations are armed/cancelled, and
+  `wait_for_trigger` polls template/state triggers each simulated minute. All 12 scenarios now
+  drive the real trigger path.
+- **CI matrix** now includes Python 3.14 to match the classifiers, with a packaging test that
+  fails if the two drift apart.
+- **Blueprint descriptions** carry a Turkish (`TR:`) summary; `docs/blueprints.tr.md` adds a
+  field-by-field Turkish reference. Home Assistant itself does not localise blueprint UI fields
+  and the docs say so.
+- **Package/repo blueprint copies**: a test now fails if `src/bakim_bloklari/blueprints/`
+  diverges from `blueprints/automation/bakim_bloklari/`.
+
+### Tests
+- 76 tests (up from 52); regression tests cover earlier-morning motion, escalation ordering and
+  acknowledgement stops, trigger `for:` durations, validator structural errors, and CLI install
+  conflict/force/backup paths. Overall coverage 96% (threshold 85%).
+
 ## [0.1.0] - 2026-11-03
 
 ### Added
@@ -15,8 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `escalation_pipeline.yaml`: Reusable multi-stage notification escalation pipeline (speaker prompt -> phone ping -> caregiver alarm).
   - `ok_button.yaml`: Wireless button handler for "I Am OK" acknowledgment (single click) and immediate SOS dispatch (double/long press).
 - **Home Assistant Blueprint Validation Engine (`bakim_bloklari.schema`)**:
-  - Full schema validator for Home Assistant blueprint standards, selectors, and tags (`!input`).
-  - Strict safety filter enforcing offline (`unavailable`/`unknown`) sensor handling to prevent false emergency alerts.
+  - Structural validator for blueprint metadata, inputs, triggers, actions and `!input` tags.
+  - Offline-sensor guard check for `unavailable`/`unknown` handling in `condition:` templates
+    (a heuristic warning, not a full Home Assistant schema validator).
 - **Home Assistant Virtual Environment & Template Engine (`bakim_bloklari.jinja_env`)**:
   - Mock Home Assistant Jinja2 environment providing `states()`, `is_state()`, `state_attr()`, `is_state_attr()`, `has_value()`, `now()`, `utcnow()`, `as_datetime()`, `as_timestamp()`, and `iif()`.
 - **Deterministic State Engine Simulator (`bakim_bloklari.simulator`)**:

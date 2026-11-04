@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bakim-bloklari"
-version = "0.1.0"
+version = "0.1.1"
 description = "Privacy-first Home Assistant blueprints and simulation suite for elderly care"
 readme = "README.md"
 authors = [
