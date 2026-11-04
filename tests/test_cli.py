@@ -122,12 +122,106 @@ def test_cli_install(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None
     code = main(["install", "--target", str(ha_config)])
     assert code == 0
     captured = capsys.readouterr()
-    assert "Successfully installed" in captured.out
+    assert "Installed 5, unchanged 0, skipped 0" in captured.out
 
     dest = ha_config / "blueprints" / "automation" / "bakim_bloklari"
     assert (dest / "morning_inactivity.yaml").is_file()
     assert (dest / "prolonged_bathroom.yaml").is_file()
     assert (dest / "door_left_open.yaml").is_file()
+
+
+def test_cli_install_refuses_to_overwrite_local_changes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ha_config = tmp_path / "homeassistant"
+    source = tmp_path / "blueprints_src"
+    source.mkdir()
+    (source / "one.yaml").write_text("blueprint: packed\n", encoding="utf-8")
+
+    dest = ha_config / "blueprints" / "automation" / "bakim_bloklari"
+    dest.mkdir(parents=True)
+    local = dest / "one.yaml"
+    local.write_text("blueprint: locally edited\n", encoding="utf-8")
+
+    code = main(["install", "--target", str(ha_config), "--blueprints-dir", str(source)])
+    assert code == 1
+    assert local.read_text(encoding="utf-8") == "blueprint: locally edited\n"
+    captured = capsys.readouterr()
+    assert "Skipped" in captured.err
+    assert "--force" in captured.err
+
+
+def test_cli_install_force_overwrites(tmp_path: Path) -> None:
+    ha_config = tmp_path / "homeassistant"
+    source = tmp_path / "blueprints_src"
+    source.mkdir()
+    (source / "one.yaml").write_text("blueprint: packed\n", encoding="utf-8")
+
+    dest = ha_config / "blueprints" / "automation" / "bakim_bloklari"
+    dest.mkdir(parents=True)
+    local = dest / "one.yaml"
+    local.write_text("blueprint: locally edited\n", encoding="utf-8")
+
+    code = main(
+        [
+            "install",
+            "--target",
+            str(ha_config),
+            "--blueprints-dir",
+            str(source),
+            "--force",
+        ]
+    )
+    assert code == 0
+    assert local.read_text(encoding="utf-8") == "blueprint: packed\n"
+
+
+def test_cli_install_backup_keeps_previous_copy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ha_config = tmp_path / "homeassistant"
+    source = tmp_path / "blueprints_src"
+    source.mkdir()
+    (source / "one.yaml").write_text("blueprint: packed\n", encoding="utf-8")
+
+    dest = ha_config / "blueprints" / "automation" / "bakim_bloklari"
+    dest.mkdir(parents=True)
+    local = dest / "one.yaml"
+    local.write_text("blueprint: locally edited\n", encoding="utf-8")
+
+    code = main(
+        [
+            "install",
+            "--target",
+            str(ha_config),
+            "--blueprints-dir",
+            str(source),
+            "--backup",
+        ]
+    )
+    assert code == 0
+    backups = list(dest.glob("one.yaml.*.bak"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == "blueprint: locally edited\n"
+    assert local.read_text(encoding="utf-8") == "blueprint: packed\n"
+    assert "Backed up" in capsys.readouterr().out
+
+
+def test_cli_install_skips_identical_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ha_config = tmp_path / "homeassistant"
+    source = tmp_path / "blueprints_src"
+    source.mkdir()
+    (source / "one.yaml").write_text("blueprint: packed\n", encoding="utf-8")
+
+    code = main(["install", "--target", str(ha_config), "--blueprints-dir", str(source)])
+    assert code == 0
+    code = main(["install", "--target", str(ha_config), "--blueprints-dir", str(source)])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Unchanged: one.yaml" in captured.out
+    assert "Installed 0, unchanged 1, skipped 0" in captured.out
 
 
 def test_cli_install_invalid_source(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

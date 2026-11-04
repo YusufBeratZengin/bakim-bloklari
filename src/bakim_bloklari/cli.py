@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
@@ -190,7 +191,12 @@ def cmd_inspect(args: argparse.Namespace) -> int:
 
 
 def cmd_install(args: argparse.Namespace) -> int:
-    """Copy blueprints into Home Assistant configuration directory."""
+    """Copy blueprints into a Home Assistant configuration directory.
+
+    Existing files are never clobbered silently: identical files are reported as
+    unchanged, differing files are skipped unless ``--force`` is given, and
+    ``--backup`` keeps a timestamped copy before overwriting.
+    """
     src_dir = Path(args.blueprints_dir) if args.blueprints_dir else get_default_blueprints_dir()
     if not src_dir.is_dir():
         print(f"Error: Source blueprints directory not found: '{src_dir}'", file=sys.stderr)
@@ -200,12 +206,42 @@ def cmd_install(args: argparse.Namespace) -> int:
     dest_dir = target_dir / "blueprints" / "automation" / "bakim_bloklari"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    files = list(src_dir.glob("*.yaml")) + list(src_dir.glob("*.yml"))
-    for f in files:
-        shutil.copy2(f, dest_dir / f.name)
-        print(f"Installed: {f.name} -> {dest_dir / f.name}")
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    files = sorted(list(src_dir.glob("*.yaml")) + list(src_dir.glob("*.yml")))
+    installed = 0
+    unchanged = 0
+    conflicts = 0
 
-    print(f"\nSuccessfully installed {len(files)} blueprint(s) to '{dest_dir}'.")
+    for f in files:
+        dest = dest_dir / f.name
+        if dest.is_file():
+            if dest.read_bytes() == f.read_bytes():
+                print(f"Unchanged: {f.name} (identical file already installed)")
+                unchanged += 1
+                continue
+            if args.backup:
+                backup_path = dest.with_name(f"{dest.name}.{stamp}.bak")
+                shutil.copy2(dest, backup_path)
+                print(f"Backed up: {dest.name} -> {backup_path.name}")
+            elif not args.force:
+                print(
+                    f"Skipped: {dest} already exists and differs "
+                    f"(use --force to overwrite or --backup to keep a copy)",
+                    file=sys.stderr,
+                )
+                conflicts += 1
+                continue
+        shutil.copy2(f, dest)
+        print(f"Installed: {f.name} -> {dest}")
+        installed += 1
+
+    print(f"\nInstalled {installed}, unchanged {unchanged}, skipped {conflicts} in '{dest_dir}'.")
+    if conflicts:
+        print(
+            "Some blueprints were not installed because local versions differ.",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -250,6 +286,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     p_inst.add_argument(
         "--blueprints-dir", default=None, help="Directory containing source blueprints"
+    )
+    p_inst.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing blueprints that differ from the packaged version",
+    )
+    p_inst.add_argument(
+        "--backup",
+        action="store_true",
+        help="Keep a timestamped .bak copy before overwriting an existing blueprint",
     )
 
     args = parser.parse_args(argv)
