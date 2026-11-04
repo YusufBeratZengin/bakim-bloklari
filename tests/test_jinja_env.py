@@ -97,3 +97,30 @@ def test_jinja_env_update_states() -> None:
 
     env.update_states({"sensor.temp": EntityState("sensor.temp", "21")})
     assert env.is_state("sensor.temp", "21") is True
+
+
+def test_jinja_env_states_index_and_today_at() -> None:
+    """`states[...]` must expose last_changed, and today_at must build local timestamps."""
+    now_dt = datetime(2026, 11, 3, 10, 30, 0)
+    changed = datetime(2026, 11, 3, 7, 2, 0)
+    env = HomeAssistantJinjaEnvironment(
+        {"binary_sensor.hall": EntityState("binary_sensor.hall", "off", last_changed=changed)}
+    )
+    env.set_time(now_dt)
+
+    assert env.get_state("binary_sensor.hall").last_changed == changed
+    assert env.get_state("binary_sensor.missing").state == "unknown"
+    assert env.get_state("binary_sensor.missing").last_changed is None
+
+    rendered = env.render_template(
+        "{{ states['binary_sensor.hall'].state }}|"
+        "{{ as_timestamp(states['binary_sensor.hall'].last_changed) }}|"
+        "{{ as_timestamp(states['binary_sensor.missing'].last_changed) }}"
+    )
+    assert rendered.startswith("off|")
+    assert rendered.endswith("|None")
+
+    assert env.render_template("{{ today_at('06:30') }}") == "2026-11-03 06:30:00"
+    assert env.render_template("{{ today_at('06:30:15') }}") == "2026-11-03 06:30:15"
+    assert env.render_template("{{ today_at('nonsense') }}") == "2026-11-03 00:00:00"
+    assert env.render_template("{{ today_at(some_dt) }}", {"some_dt": now_dt}) == str(now_dt)

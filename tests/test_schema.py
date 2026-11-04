@@ -140,10 +140,98 @@ action:
     result = validator.validate_file(bad_yaml)
     assert not result.valid
     assert any("Jinja template syntax error" in i.message for i in result.errors)
-    assert any(
-        "Safety Notice: Blueprint does not explicitly check for 'unavailable'" in i.message
-        for i in result.warnings
+
+
+def test_safety_guard_must_be_in_conditions_not_description(tmp_path: Path) -> None:
+    """Regression: mentioning unavailable/unknown in prose must not count as a guard."""
+    validator = BlueprintValidator()
+    bp_file = tmp_path / "prose_guard.yaml"
+    bp_file.write_text(
+        """blueprint:
+  name: "Prose Guard Only"
+  description: "Ignores unavailable and unknown sensor states, allegedly."
+  domain: automation
+  input:
+    sensor:
+      name: "Sensor"
+      selector:
+        entity:
+          domain: binary_sensor
+trigger:
+  - platform: state
+    entity_id: !input sensor
+condition:
+  - condition: state
+    entity_id: !input sensor
+    state: "off"
+action:
+  - service: notify.notify
+""",
+        encoding="utf-8",
     )
+    result = validator.validate_file(bp_file)
+    assert any("offline-sensor guard" in i.message for i in result.warnings)
+
+
+def test_undeclared_input_reference_is_an_error(tmp_path: Path) -> None:
+    validator = BlueprintValidator()
+    bp_file = tmp_path / "undeclared.yaml"
+    bp_file.write_text(
+        """blueprint:
+  name: "Undeclared Input"
+  description: "References a missing input declaration."
+  domain: automation
+  input:
+    sensor:
+      name: "Sensor"
+      selector:
+        entity: {}
+trigger:
+  - platform: state
+    entity_id: !input missing_sensor
+condition:
+  - condition: template
+    value_template: "{{ not is_state('s', 'unavailable') and not is_state('s', 'unknown') }}"
+action:
+  - service: notify.notify
+""",
+        encoding="utf-8",
+    )
+    result = validator.validate_file(bp_file)
+    assert not result.valid
+    assert any("undeclared input 'missing_sensor'" in i.message for i in result.errors)
+
+
+def test_unknown_trigger_platform_and_mode_are_errors(tmp_path: Path) -> None:
+    validator = BlueprintValidator()
+    bp_file = tmp_path / "bad_trigger.yaml"
+    bp_file.write_text(
+        """blueprint:
+  name: "Bad Trigger"
+  description: "Uses an unsupported trigger platform and automation mode."
+  domain: automation
+  input:
+    sensor:
+      name: "Sensor"
+      selector:
+        entity: {}
+mode: sometimes
+trigger:
+  - platform: teleport
+    entity_id: !input sensor
+condition:
+  - condition: template
+    value_template: "{{ not is_state('s', 'unavailable') and not is_state('s', 'unknown') }}"
+action:
+  - service: notify.notify
+""",
+        encoding="utf-8",
+    )
+    result = validator.validate_file(bp_file)
+    assert not result.valid
+    messages = [i.message for i in result.errors]
+    assert any("Unknown trigger platform 'teleport'" in m for m in messages)
+    assert any("Unknown automation mode 'sometimes'" in m for m in messages)
 
 
 def test_parse_blueprint_returns_none_on_invalid(tmp_path: Path) -> None:
@@ -197,3 +285,104 @@ def test_input_constructor_non_scalar(tmp_path: Path) -> None:
     data, issues = validator.load_yaml(yaml_file)
     assert data is not None
     assert data["item"] == InputRef("")
+
+
+def test_action_sequence_structural_errors(tmp_path: Path) -> None:
+    validator = BlueprintValidator()
+    bp_file = tmp_path / "bad_actions.yaml"
+    bp_file.write_text(
+        """blueprint:
+  name: "Bad Actions"
+  description: "Exercises structural action validation branches."
+  domain: automation
+  input:
+    sensor:
+      name: "Sensor"
+      selector:
+        entity: {}
+trigger:
+  - platform: state
+    entity_id: !input sensor
+condition:
+  - condition: template
+    value_template: "{{ not is_state('s', 'unavailable') and not is_state('s', 'unknown') }}"
+action:
+  - choose:
+      - conditions: []
+        sequence: []
+      - conditions:
+          - condition: template
+            value_template: "{{ true }}"
+    default:
+      - service: notify.notify
+  - delay: [bad, list]
+  - totally_unknown_key: true
+  - 42
+""",
+        encoding="utf-8",
+    )
+    result = validator.validate_file(bp_file)
+    messages = [i.message for i in result.errors]
+    assert any("non-empty 'conditions'" in m for m in messages)
+    assert any("requires a 'sequence'" in m for m in messages)
+    assert any("'delay' must be a number" in m for m in messages)
+    assert any("no recognized key" in m for m in messages)
+    assert any("non-empty mapping" in m for m in messages)
+
+
+def test_action_sequence_unrecognized_key_is_warning(tmp_path: Path) -> None:
+    validator = BlueprintValidator()
+    bp_file = tmp_path / "extra_key.yaml"
+    bp_file.write_text(
+        """blueprint:
+  name: "Extra Action Key"
+  description: "Known action plus an unknown sibling key."
+  domain: automation
+  input:
+    sensor:
+      name: "Sensor"
+      selector:
+        entity: {}
+trigger:
+  - platform: state
+    entity_id: !input sensor
+condition:
+  - condition: template
+    value_template: "{{ not is_state('s', 'unavailable') and not is_state('s', 'unknown') }}"
+action:
+  - service: notify.notify
+    mystery_key: 1
+""",
+        encoding="utf-8",
+    )
+    result = validator.validate_file(bp_file)
+    assert any("Unrecognized action keys" in i.message for i in result.warnings)
+
+
+def test_non_mapping_trigger_and_choose_shape(tmp_path: Path) -> None:
+    validator = BlueprintValidator()
+    bp_file = tmp_path / "shape.yaml"
+    bp_file.write_text(
+        """blueprint:
+  name: "Bad Shapes"
+  description: "Non-mapping trigger and invalid choose container."
+  domain: automation
+  input:
+    sensor:
+      name: "Sensor"
+      selector:
+        entity: {}
+trigger:
+  - "just a string"
+condition:
+  - condition: template
+    value_template: "{{ not is_state('s', 'unavailable') and not is_state('s', 'unknown') }}"
+action:
+  - choose: not-a-list
+""",
+        encoding="utf-8",
+    )
+    result = validator.validate_file(bp_file)
+    messages = [i.message for i in result.errors]
+    assert any("Trigger must be a mapping" in m for m in messages)
+    assert any("'choose' must be a list" in m for m in messages)
