@@ -6,6 +6,10 @@ blueprint:
     often result in sustained immobility behind closed doors. Triggers an alert when occupancy
     exceeds the configured threshold while resident is home. Safe against unavailable/offline
     sensors.
+
+    TR: Uzun süreli banyo/ıslak hacim denetimi. Hareket, mmWave varlık radarı veya kapı kontağı
+    ile eşik süresi aşılırsa uyarı verir. Düşme veya rahatsızlık nedeniyle kapalı kapı ardında
+    hareketsiz kalan yaşlıyı hedefler. Sensör çevrimdışıysa alarm üretmez.
   domain: automation
   input:
     bathroom_sensor:

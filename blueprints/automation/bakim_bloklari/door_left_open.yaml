@@ -6,6 +6,10 @@ blueprint:
     (e.g. 5 minutes). During night hours, triggers immediate or short-delay alerts to protect
     elders with cognitive decline or sleepwalking tendencies. Filters out unavailable/unknown
     states.
+
+    TR: Dış kapı açık kalma ve gece gezintisi denetimi. Gündüz eşik süresinden uzun açık kalan
+    kapı için uyarı verir; gece saatlerinde kapı açıldığında derhal bildirim gönderir. Bilişsel
+    gerileme veya uyurgezerlik yaşayan bireyleri hedefler. Sensör çevrimdışıysa alarm üretmez.
   domain: automation
   input:
     door_sensor:

@@ -5,6 +5,10 @@ blueprint:
     or necklaces. A single press acknowledges active morning checks or daily check-ins ("I Am OK"),
     resetting alert flags and turning off alert booleans. A double press or long press initiates
     an immediate high-priority emergency protocol to caregivers.
+
+    TR: "İyiyim" ve acil durum düğmesi işleyicisi. Tek basış sabah kontrolünü onaylar ve uyarı
+    bayraklarını temizler; çift basış veya uzun basış bakıcıya acil çağrı gönderir. Yatak başı,
+    yaka veya bileklik düğmeleri için tasarlanmıştır.
   domain: automation
   input:
     button_entity:

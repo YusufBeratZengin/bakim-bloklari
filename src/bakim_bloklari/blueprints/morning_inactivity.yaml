@@ -5,6 +5,13 @@ blueprint:
     by the specified check time while the resident is home, a staged escalation alert
     is triggered. Designed for elderly individuals living alone without intrusive cameras.
     Gracefully ignores unavailable or unknown sensor states to eliminate false alarms.
+    Activity is counted if a sensor is active at check time or changed state at/after the
+    morning window start, so morning motion is not forgotten by 10:00.
+
+    TR: Sabah hareketsizlik denetimi. Sabah penceresi başlangıcından kontrol saatine kadar
+    hareket algılanmışsa uyarı vermez; yalnızca gerçekten hareketsiz bir sabah için kademeli
+    uyarı üretir. Sensör çevrimdışıysa (unavailable/unknown) yanlış alarm vermez. Kamera
+    kullanmaz; hareket verisi evde kalır.
   domain: automation
   input:
     motion_sensors:
@@ -111,14 +118,27 @@ condition:
       {% set valid_sensors = sensor_list | reject('is_state', 'unavailable') | reject('is_state', 'unknown') | list %}
       {{ valid_sensors | length > 0 }}
 
-  # 3. Inactivity condition: None of the valid sensors are currently active or triggered
+  # 3. Inactivity condition: no sensor showed activity since the morning window opened.
+  # A sensor counts as "activity seen" if it is active right now, or if its last state
+  # change happened at/after today's morning_start_time (e.g. motion at 07:00, idle by 10:00).
   - condition: template
     value_template: >-
+      {% set start_raw = morning_start_time_var | string %}
+      {% set full_start = start_raw if (start_raw | length == 8) else (start_raw ~ ':00') %}
+      {% set window_start = today_at(full_start) %}
       {% set sensors = motion_sensors_var %}
       {% set sensor_list = sensors if sensors is iterable and sensors is not string else [sensors] %}
       {% set valid_sensors = sensor_list | reject('is_state', 'unavailable') | reject('is_state', 'unknown') | list %}
-      {% set active_sensors = valid_sensors | select('is_state', 'on') | list %}
-      {{ active_sensors | length == 0 }}
+      {% set ns = namespace(activity_seen=false) %}
+      {% for s in valid_sensors %}
+        {% if is_state(s, 'on') %}
+          {% set ns.activity_seen = true %}
+        {% elif as_timestamp(states[s].last_changed) is not none
+              and as_timestamp(states[s].last_changed) >= as_timestamp(window_start) %}
+          {% set ns.activity_seen = true %}
+        {% endif %}
+      {% endfor %}
+      {{ not ns.activity_seen }}
 
 action:
   - choose: []

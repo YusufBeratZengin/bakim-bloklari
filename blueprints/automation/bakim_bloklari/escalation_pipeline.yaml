@@ -3,10 +3,17 @@ blueprint:
   description: >
     A graduated response pipeline designed to eliminate alert fatigue for families.
     Stage 1: Plays an inquiry chime or voice prompt on a local smart speaker ("Are you okay?").
-    Stage 2: Waits for a local confirmation (button press or sensor motion). If unacknowledged,
-    sends a polite push notification to the resident's mobile phone.
-    Stage 3: If still unacknowledged after the timeout, escalates to a high-priority critical
-    alarm to designated family members and caregivers.
+    Stage 2: Waits for a local confirmation (button press or motion). Only if the resident does
+    not answer, sends a polite push notification to the resident's mobile phone and waits again.
+    Stage 3: If still unacknowledged after the second window, escalates to a high-priority
+    critical alarm to designated family members and caregivers.
+    Acknowledgement at any stage stops the pipeline, so caregivers are never paged when the
+    resident already answered.
+
+    TR: Kademeli acil durum hattı. Önce evdeki hoparlörden "İyi misiniz?" uyarısı verilir,
+    ardından yerel onay beklenir. Onay gelmezse yaşlının telefonuna nazik bir bildirim gönderilir
+    ve yeniden beklenir. Hâlâ onay yoksa bakıcıya kritik alarm iletilir. Herhangi bir aşamadaki
+    onay sonraki aşamaları durdurur; gereksiz uyarı yorgunluğu oluşmaz.
   domain: automation
   input:
     trigger_boolean:
@@ -69,15 +76,11 @@ condition:
       {{ not is_state(ent, 'unavailable') and not is_state(ent, 'unknown') }}
 
 action:
-  # Stage 1: Local speaker prompt
+  # Stage 1: local speaker prompt ("Are you okay?")
   - choose: []
     default: !input speaker_action
 
-  # Stage 2: Resident notification
-  - choose: []
-    default: !input resident_notify_action
-
-  # Wait for acknowledgment (if ack_entity configured) or delay timeout
+  # Stage 2a: wait for the resident's local acknowledgement
   - choose:
       - conditions:
           - condition: template
@@ -97,15 +100,40 @@ action:
       - delay:
           minutes: !input wait_resident_minutes
 
-  # Stage 3: If still not acknowledged, escalate to caregiver
+  # Stage 2b: only if the resident has not answered, ping their phone and wait again
   - choose:
       - conditions:
           - condition: template
             value_template: >-
               {% set ack = ack_entity_var %}
-              {% if ack and ack != '' %}
-                {{ not is_state(ack, 'on') }}
-              {% else %}
-                true
-              {% endif %}
-        sequence: !input caregiver_notify_action
+              {{ not (ack and ack != '' and is_state(ack, 'on')) }}
+        sequence:
+          - choose: []
+            default: !input resident_notify_action
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {% set ack = ack_entity_var %}
+                      {{ ack is defined and ack != '' }}
+                sequence:
+                  - wait_for_trigger:
+                      - platform: template
+                        value_template: >-
+                          {% set ack = ack_entity_var %}
+                          {{ ack and is_state(ack, 'on') }}
+                    timeout:
+                      minutes: !input wait_resident_minutes
+                    continue_on_timeout: true
+            default:
+              - delay:
+                  minutes: !input wait_resident_minutes
+
+          # Stage 3: still no acknowledgement -> critical caregiver alarm
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {% set ack = ack_entity_var %}
+                      {{ not (ack and ack != '' and is_state(ack, 'on')) }}
+                sequence: !input caregiver_notify_action

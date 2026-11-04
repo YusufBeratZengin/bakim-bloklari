@@ -62,13 +62,14 @@ class ScenarioSuite:
         return [fn() for fn in scenarios]
 
     def scenario_01_morning_motion_detected_no_alert(self) -> ScenarioResult:
-        """Scenario 1: Normal morning motion detected -> No alarm triggered."""
+        """Scenario 1: Motion at 07:00, resident idle by 10:00 -> No alarm triggered."""
         bp = self.get_blueprint("morning_inactivity.yaml")
         sim = HomeAssistantSimulator(
             blueprint=bp,
             inputs={
                 "motion_sensors": ["binary_sensor.living_room_motion"],
                 "check_time": "10:00:00",
+                "morning_start_time": "06:30:00",
                 "person_entity": "person.elder_person",
                 "vacation_mode": "input_boolean.vacation_mode",
                 "notify_action": [
@@ -76,20 +77,23 @@ class ScenarioSuite:
                 ],
             },
         )
-        sim.set_time(datetime(2026, 11, 3, 10, 0, 0))
+        sim.set_time(datetime(2026, 11, 3, 7, 0, 0))
         sim.set_state("person.elder_person", "home")
         sim.set_state("input_boolean.vacation_mode", "off")
-        sim.set_state("binary_sensor.living_room_motion", "on")  # active motion
+        sim.set_state("binary_sensor.living_room_motion", "on")  # morning motion
+        sim.advance_time(minutes=2)
+        sim.set_state("binary_sensor.living_room_motion", "off")  # idle again at 07:02
 
-        triggered = sim.trigger_time_check("10:00:00")
+        sim.set_time(datetime(2026, 11, 3, 10, 0, 0))
+        triggered = sim.process_time_trigger()
         passed = (not triggered) and (len(sim.action_history) == 0)
         return ScenarioResult(
             scenario_id="SCENARIO-01",
-            name="Normal Morning Motion Detected -> No Alarm",
+            name="Morning Motion Detected Earlier in Window -> No Alarm",
             passed=passed,
             logs=sim.logs,
             action_calls=sim.action_history,
-            error_message=None if passed else "Expected no alert when motion is detected",
+            error_message=None if passed else "Expected no alert when morning motion was recorded",
         )
 
     def scenario_02_morning_inactivity_alert_triggered(self) -> ScenarioResult:
@@ -113,9 +117,12 @@ class ScenarioSuite:
         sim.set_time(datetime(2026, 11, 3, 10, 0, 0))
         sim.set_state("person.elder_person", "home")
         sim.set_state("input_boolean.vacation_mode", "off")
-        sim.set_state("binary_sensor.living_room_motion", "off")  # zero motion
+        # Sensor idle since the previous evening: no activity inside the morning window.
+        sim.set_state(
+            "binary_sensor.living_room_motion", "off", timestamp=datetime(2026, 11, 2, 22, 0, 0)
+        )
 
-        triggered = sim.trigger_time_check("10:00:00")
+        triggered = sim.process_time_trigger()
         passed = triggered and (len(sim.action_history) == 1)
         return ScenarioResult(
             scenario_id="SCENARIO-02",
@@ -144,9 +151,11 @@ class ScenarioSuite:
         sim.set_time(datetime(2026, 11, 3, 10, 0, 0))
         sim.set_state("person.elder_person", "not_home")  # away
         sim.set_state("input_boolean.vacation_mode", "off")
-        sim.set_state("binary_sensor.living_room_motion", "off")
+        sim.set_state(
+            "binary_sensor.living_room_motion", "off", timestamp=datetime(2026, 11, 2, 22, 0, 0)
+        )
 
-        triggered = sim.trigger_time_check("10:00:00")
+        triggered = sim.process_time_trigger()
         passed = (not triggered) and (len(sim.action_history) == 0)
         return ScenarioResult(
             scenario_id="SCENARIO-03",
@@ -177,9 +186,11 @@ class ScenarioSuite:
         sim.set_time(datetime(2026, 11, 3, 10, 0, 0))
         sim.set_state("person.elder_person", "home")
         sim.set_state("input_boolean.vacation_mode", "on")  # vacation mode ON
-        sim.set_state("binary_sensor.living_room_motion", "off")
+        sim.set_state(
+            "binary_sensor.living_room_motion", "off", timestamp=datetime(2026, 11, 2, 22, 0, 0)
+        )
 
-        triggered = sim.trigger_time_check("10:00:00")
+        triggered = sim.process_time_trigger()
         passed = (not triggered) and (len(sim.action_history) == 0)
         return ScenarioResult(
             scenario_id="SCENARIO-04",
@@ -210,7 +221,7 @@ class ScenarioSuite:
         sim.set_state("input_boolean.vacation_mode", "off")
         sim.set_state("binary_sensor.living_room_motion", "unavailable")  # sensor offline
 
-        triggered = sim.trigger_time_check("10:00:00")
+        triggered = sim.process_time_trigger()
         passed = (not triggered) and (len(sim.action_history) == 0)
         return ScenarioResult(
             scenario_id="SCENARIO-05",
@@ -241,7 +252,7 @@ class ScenarioSuite:
         sim.set_state("input_boolean.vacation_mode", "off")
         sim.set_state("binary_sensor.living_room_motion", "unknown")  # sensor state unknown
 
-        triggered = sim.trigger_time_check("10:00:00")
+        triggered = sim.process_time_trigger()
         passed = (not triggered) and (len(sim.action_history) == 0)
         return ScenarioResult(
             scenario_id="SCENARIO-06",
@@ -268,10 +279,11 @@ class ScenarioSuite:
         )
         sim.set_time(datetime(2026, 11, 3, 8, 0, 0))
         sim.set_state("person.elder_person", "home")
-        sim.set_state("binary_sensor.bathroom_radar", "on")
-        # normal shower: person leaves after 15 minutes
+        sim.process_state_change("binary_sensor.bathroom_radar", "on")
+        # normal shower: person leaves after 15 minutes, before the 30 minute trigger fires
         sim.advance_time(minutes=15)
-        sim.set_state("binary_sensor.bathroom_radar", "off")
+        sim.process_state_change("binary_sensor.bathroom_radar", "off")
+        sim.advance_time(minutes=20)
 
         passed = len(sim.action_history) == 0
         return ScenarioResult(
@@ -284,7 +296,7 @@ class ScenarioSuite:
         )
 
     def scenario_08_bathroom_prolonged_occupancy_alert(self) -> ScenarioResult:
-        """Scenario 8: Bathroom occupancy exceeds safe duration (30 mins) -> Prolonged alert fires."""
+        """Scenario 8: Bathroom occupancy exceeds 30 mins -> Prolonged alert fires."""
         bp = self.get_blueprint("prolonged_bathroom.yaml")
         sim = HomeAssistantSimulator(
             blueprint=bp,
@@ -302,25 +314,24 @@ class ScenarioSuite:
         )
         sim.set_time(datetime(2026, 11, 3, 8, 0, 0))
         sim.set_state("person.elder_person", "home")
-        sim.set_state("binary_sensor.bathroom_radar", "on")
+        sim.process_state_change("binary_sensor.bathroom_radar", "on")
         sim.advance_time(minutes=31)
 
-        # Trigger timer expiration
-        triggered = sim.trigger_state_change(
-            "binary_sensor.bathroom_radar", "on", trigger_id="prolonged"
-        )
-        passed = triggered and (len(sim.action_history) == 1)
+        fired_at = sim.action_history[0].timestamp if sim.action_history else None
+        passed = len(sim.action_history) == 1 and fired_at == datetime(2026, 11, 3, 8, 30, 0)
         return ScenarioResult(
             scenario_id="SCENARIO-08",
             name="Bathroom Prolonged Occupancy (>30m) -> Emergency Alert Fired",
             passed=passed,
             logs=sim.logs,
             action_calls=sim.action_history,
-            error_message=None if passed else "Expected prolonged bathroom alarm to fire",
+            error_message=None
+            if passed
+            else "Expected prolonged bathroom alarm after the configured 30-minute duration",
         )
 
     def scenario_09_bathroom_sensor_unavailable_safe(self) -> ScenarioResult:
-        """Scenario 9: Bathroom sensor goes 'unavailable' -> No false prolonged alarm."""
+        """Scenario 9: Radar drops offline mid-occupancy -> No false prolonged alarm."""
         bp = self.get_blueprint("prolonged_bathroom.yaml")
         sim = HomeAssistantSimulator(
             blueprint=bp,
@@ -338,10 +349,12 @@ class ScenarioSuite:
         )
         sim.set_time(datetime(2026, 11, 3, 8, 0, 0))
         sim.set_state("person.elder_person", "home")
-        sim.set_state("binary_sensor.bathroom_radar", "unavailable")
+        sim.process_state_change("binary_sensor.bathroom_radar", "on")
+        sim.advance_time(minutes=10)
+        sim.process_state_change("binary_sensor.bathroom_radar", "unavailable")
+        sim.advance_time(minutes=25)
 
-        triggered = sim.trigger_state_change("binary_sensor.bathroom_radar", "unavailable")
-        passed = (not triggered) and (len(sim.action_history) == 0)
+        passed = len(sim.action_history) == 0
         return ScenarioResult(
             scenario_id="SCENARIO-09",
             name="Bathroom Sensor Unavailable -> Safe Fallback (No False Alarm)",
@@ -354,7 +367,7 @@ class ScenarioSuite:
         )
 
     def scenario_10_door_left_open_daytime_alert(self) -> ScenarioResult:
-        """Scenario 10: Entrance door left open for 5+ minutes in daytime -> Door open alarm fires."""
+        """Scenario 10: Entrance door left open 5+ minutes in daytime -> Alert fires."""
         bp = self.get_blueprint("door_left_open.yaml")
         sim = HomeAssistantSimulator(
             blueprint=bp,
@@ -370,20 +383,18 @@ class ScenarioSuite:
             },
         )
         sim.set_time(datetime(2026, 11, 3, 14, 0, 0))  # 14:00 daytime
-        sim.set_state("binary_sensor.front_door", "on")
-        sim.advance_time(minutes=5)
+        sim.process_state_change("binary_sensor.front_door", "on")
+        sim.advance_time(minutes=6)
 
-        triggered = sim.trigger_state_change(
-            "binary_sensor.front_door", "on", trigger_id="daytime_open"
-        )
-        passed = triggered and (len(sim.action_history) == 1)
+        fired_at = sim.action_history[0].timestamp if sim.action_history else None
+        passed = len(sim.action_history) == 1 and fired_at == datetime(2026, 11, 3, 14, 5, 0)
         return ScenarioResult(
             scenario_id="SCENARIO-10",
             name="Front Door Left Open Daytime (>5m) -> Alert Fired",
             passed=passed,
             logs=sim.logs,
             action_calls=sim.action_history,
-            error_message=None if passed else "Expected daytime door alert to fire",
+            error_message=None if passed else "Expected daytime door alert after 5 minutes",
         )
 
     def scenario_11_door_opened_night_wandering_alert(self) -> ScenarioResult:
@@ -409,10 +420,9 @@ class ScenarioSuite:
         sim.set_state("binary_sensor.front_door", "off")
 
         # Door opens at 02:30 AM
-        triggered = sim.trigger_state_change(
-            "binary_sensor.front_door", "on", trigger_id="night_open"
-        )
-        passed = triggered and (len(sim.action_history) == 1)
+        sim.process_state_change("binary_sensor.front_door", "on")
+        fired_at = sim.action_history[0].timestamp if sim.action_history else None
+        passed = len(sim.action_history) == 1 and fired_at == datetime(2026, 11, 3, 2, 30, 0)
         return ScenarioResult(
             scenario_id="SCENARIO-11",
             name="Night Wandering Door Open (02:30 AM) -> Urgent Alert Fired",
@@ -443,7 +453,7 @@ class ScenarioSuite:
         sim.set_state("event.bedside_button", "single_press")
 
         # Single press event triggered
-        sim.trigger_state_change("event.bedside_button", "single_press")
+        sim.process_state_change("event.bedside_button", "single_press")
         passed = (len(sim.action_history) == 1) and (
             sim.action_history[0].action_type == "input_boolean.turn_off"
         )

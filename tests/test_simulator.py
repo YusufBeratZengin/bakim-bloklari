@@ -1,6 +1,6 @@
 """Tests for Home Assistant simulator state machine and event runner."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -324,3 +324,137 @@ def test_prolonged_bathroom_door_unknown_suppressed() -> None:
     triggered = sim.trigger_state_change("binary_sensor.bath_presence", "on")
     assert triggered is False
     assert len(sim.action_history) == 0
+
+
+def _morning_blueprint() -> BlueprintDefinition:
+    repo_root = Path(__file__).resolve().parent.parent
+    bp_path = repo_root / "blueprints" / "automation" / "bakim_bloklari" / "morning_inactivity.yaml"
+    from bakim_bloklari.schema import BlueprintValidator
+
+    bp = BlueprintValidator().parse_blueprint(bp_path)
+    assert bp is not None
+    return bp
+
+
+def test_morning_motion_earlier_in_window_counts_as_activity() -> None:
+    """Regression: motion between window start and check time must suppress the alert.
+
+    Before the fix the blueprint only looked at the sensors' *current* state at
+    check time, so a resident who moved at 07:00 and then sat still was reported
+    as inactive at 10:00.
+    """
+    sim = HomeAssistantSimulator(
+        _morning_blueprint(),
+        inputs={
+            "motion_sensors": ["binary_sensor.hallway_motion"],
+            "check_time": "10:00:00",
+            "morning_start_time": "06:30:00",
+            "person_entity": "person.elder",
+            "notify_action": [{"service": "notify.family"}],
+        },
+    )
+    sim.set_time(datetime(2026, 11, 3, 7, 0, 0))
+    sim.set_state("person.elder", "home")
+    sim.set_state("binary_sensor.hallway_motion", "on")
+    sim.advance_time(minutes=2)
+    sim.set_state("binary_sensor.hallway_motion", "off")  # last_changed = 07:02
+
+    sim.set_time(datetime(2026, 11, 3, 10, 0, 0))
+    triggered = sim.trigger_time_check("10:00:00")
+
+    assert triggered is False
+    assert sim.action_history == []
+
+
+def test_morning_sensor_idle_since_yesterday_still_alerts() -> None:
+    """Counter-case: an off sensor whose last change predates the window is inactivity."""
+    sim = HomeAssistantSimulator(
+        _morning_blueprint(),
+        inputs={
+            "motion_sensors": ["binary_sensor.hallway_motion"],
+            "check_time": "10:00:00",
+            "morning_start_time": "06:30:00",
+            "person_entity": "person.elder",
+            "notify_action": [{"service": "notify.family"}],
+        },
+    )
+    sim.set_time(datetime(2026, 11, 3, 6, 0, 0))
+    sim.set_state("person.elder", "home")
+    sim.set_state("binary_sensor.hallway_motion", "off", timestamp=datetime(2026, 11, 2, 21, 0, 0))
+
+    sim.set_time(datetime(2026, 11, 3, 10, 0, 0))
+    triggered = sim.trigger_time_check("10:00:00")
+
+    assert triggered is True
+    assert len(sim.action_history) == 1
+
+
+def test_state_trigger_for_duration_only_fires_after_threshold() -> None:
+    bp = make_dummy_blueprint(
+        triggers=[
+            {
+                "platform": "state",
+                "entity_id": "binary_sensor.occupancy",
+                "to": "on",
+                "for": {"minutes": 10},
+                "id": "occupied_too_long",
+            }
+        ]
+    )
+    sim = HomeAssistantSimulator(bp)
+    sim.set_time(datetime(2026, 11, 3, 8, 0, 0))
+
+    assert sim.process_state_change("binary_sensor.occupancy", "on") is False
+    sim.advance_time(minutes=9)
+    assert sim.action_history == []
+
+    sim.advance_time(minutes=2)
+    assert len(sim.action_history) == 1
+    assert sim.action_history[0].timestamp == datetime(2026, 11, 3, 8, 10, 0)
+
+
+def test_state_trigger_for_duration_cancelled_on_early_state_change() -> None:
+    bp = make_dummy_blueprint(
+        triggers=[
+            {
+                "platform": "state",
+                "entity_id": "binary_sensor.occupancy",
+                "to": "on",
+                "for": {"minutes": 10},
+            }
+        ]
+    )
+    sim = HomeAssistantSimulator(bp)
+    sim.set_time(datetime(2026, 11, 3, 8, 0, 0))
+    sim.process_state_change("binary_sensor.occupancy", "on")
+    sim.advance_time(minutes=5)
+    sim.process_state_change("binary_sensor.occupancy", "off")
+    sim.advance_time(minutes=30)
+
+    assert sim.action_history == []
+    assert any("cancelled" in line for line in sim.logs)
+
+
+def test_time_trigger_matches_simulator_clock() -> None:
+    bp = make_dummy_blueprint(triggers=[{"platform": "time", "at": "10:00:00"}])
+    sim = HomeAssistantSimulator(bp)
+    sim.set_time(datetime(2026, 11, 3, 9, 59, 0))
+    assert sim.process_time_trigger() is False
+
+    sim.set_time(datetime(2026, 11, 3, 10, 0, 0))
+    assert sim.process_time_trigger() is True
+    assert len(sim.action_history) == 1
+
+
+def test_duration_parsing_variants() -> None:
+    sim = HomeAssistantSimulator(make_dummy_blueprint(), inputs={"ten": 10})
+    assert sim._duration_to_timedelta({"minutes": 5}) == timedelta(minutes=5)
+    assert sim._duration_to_timedelta({"minutes": InputRef("ten")}) == timedelta(minutes=10)
+    assert sim._duration_to_timedelta({"hours": 1, "seconds": 30}) == timedelta(hours=1, seconds=30)
+    assert sim._duration_to_timedelta("01:02:03") == timedelta(hours=1, minutes=2, seconds=3)
+    assert sim._duration_to_timedelta("02:30") == timedelta(minutes=2, seconds=30)
+    assert sim._duration_to_timedelta(3) == timedelta(minutes=3)
+    assert sim._duration_to_timedelta({"minutes": "oops"}) == timedelta(minutes=5)
+    assert sim._duration_to_timedelta("bad") == timedelta(minutes=5)
+    assert sim._duration_to_timedelta(None, default_minutes=7) == timedelta(minutes=7)
+    assert sim._duration_to_timedelta(object()) == timedelta(minutes=5)
