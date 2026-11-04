@@ -14,7 +14,7 @@ bu belgede tutuluyor. Arayüzde İngilizce etiket, altında Türkçe özet göre
 | `morning_start_time` | Sabah penceresi başlangıcı | Varsayılan 06:30. Bu saatten sonraki herhangi bir hareket "aktivite" sayılır. |
 | `person_entity` | Yaşlı kişi varlığı | `not_home` ise uyarı verilmez. |
 | `vacation_mode` | Tatil / uzakta modu | `on` ise uyarı verilmez. |
-| `ok_button` | "İyiyim" onay düğmesi | `on` ise sabah kontrolü atlanır. |
+| `ok_button` | Sabah onay bayrağı | `input_boolean`/`binary_sensor`; `on` ise sabah kontrolü atlanır. Anlık düğme basışı kontrol saatine kadar taşınamaz, bu yüzden düğmeyi `ok_button.yaml` ile bir boolean yardımcıya bağlayın. |
 | `notify_action` | Uyarı eylemi | Örn. `notify.mobile_app_bakici`. |
 
 Davranış: kontrol saatinde sensörlerden biri `on` ise **veya** son durum değişikliği bugünkü
@@ -48,14 +48,17 @@ ise güvenli tarafta kalınır ve uyarı verilmez.
 | Alan | Türkçe | Not |
 | --- | --- | --- |
 | `trigger_boolean` | Tetikleyici varlık | `input_boolean` veya `alert`. `on` olduğunda hat başlar. |
-| `ack_entity` | Onay düğmesi/anahtarı (isteğe bağlı) | Boş bırakılırsa iki zaman penceresi kullanılır. |
+| `ack_entity` | Onay anahtarı veya düğmesi (isteğe bağlı) | Boolean `on` olursa ya da bekleme penceresinde düğme/olay varlığına basılırsa onay sayılır. Boş bırakılırsa iki zaman penceresi kullanılır. |
 | `wait_resident_minutes` | Yaşlı yanıt penceresi (dk) | Her aşamada bu kadar beklenir. |
 | `speaker_action` | 1. aşama: ev içi hoparlör | "İyi misiniz?" sesi veya zil. |
 | `resident_notify_action` | 2. aşama: yaşlının telefonu | Yalnızca ilk pencere onaysız geçerse çalışır. |
 | `caregiver_notify_action` | 3. aşama: bakıcı kritik alarmı | İki pencere de onaysız geçerse çalışır. |
 
 Sıra: hoparlör → onay bekle → (onay yoksa) telefon bildirimi → onay bekle → (onay yoksa)
-bakıcı alarmı. Herhangi bir aşamadaki onay sonraki aşamaları durdurur.
+bakıcı alarmı. Herhangi bir aşamadaki onay sonraki aşamaları durdurur. Onay iki biçimde gelir:
+boolean yardımcı varlık `on` olur (önerilen; "İyiyim" düğmesi bunu açsın) veya bekleme
+penceresinde düğme/olay varlığına basılır (olay varlığının durumu `idle` → `single_press`
+gibi değişir; blueprint bunu `not_to:` tetikleyicisiyle yakalar).
 
 ## ok_button.yaml — "İyiyim" / acil durum düğmesi
 

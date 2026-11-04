@@ -5,7 +5,7 @@
 [![CI](https://github.com/yusufberatzengin/bakim-bloklari/actions/workflows/ci.yml/badge.svg)](https://github.com/yusufberatzengin/bakim-bloklari/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
-[![Coverage: 96%](https://img.shields.io/badge/coverage-96%25-brightgreen.svg)](scripts/check.sh)
+[![Coverage: 95%](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](scripts/check.sh)
 
 `bakim-bloklari` delivers non-intrusive ambient awareness automations for seniors living independently. Without deploying privacy-invasive cameras or listening microphones, it monitors passive ambient sensors (PIR motion detectors, mmWave presence radar, and magnetic door contacts) to detect morning immobility, prolonged bathroom occupancy, or nighttime exit wandering, escalating notifications to family members only when necessary.
 
@@ -50,7 +50,7 @@ bakim-bloklari simulate
 
 ```text
 $ bakim-bloklari validate
-[bakim-bloklari v0.1.1] Validating 5 blueprint(s)...
+[bakim-bloklari v0.1.2] Validating 5 blueprint(s)...
 
 [PASS] door_left_open.yaml - Elderly Care - Exterior Door Left Open & Night Wandering (Errors: 0, Warnings: 0)
 [PASS] escalation_pipeline.yaml - Elderly Care - Multi-Stage Escalation Pipeline (Errors: 0, Warnings: 0)
@@ -62,7 +62,7 @@ $ bakim-bloklari validate
 Validation SUCCESS: All 5 blueprint(s) passed schema checks.
 
 $ bakim-bloklari simulate
-[bakim-bloklari v0.1.1] Running 12 Acceptance Scenarios against: bakim_bloklari
+[bakim-bloklari v0.1.2] Running 12 Acceptance Scenarios against: bakim_bloklari
 
 [PASS] SCENARIO-01: Morning Motion Detected Earlier in Window -> No Alarm
 [PASS] SCENARIO-02: Zero Morning Motion -> Escalation Alarm Fired
@@ -91,7 +91,7 @@ All elderly care scenarios verified successfully.
 | [`morning_inactivity.yaml`](blueprints/automation/bakim_bloklari/morning_inactivity.yaml) | Evaluates motion across the morning window (e.g. 06:30 - 10:00). Any motion in that window — not just the exact check instant — counts as activity. If none is seen while the resident is home, initiates a staged escalation. | PIR motion sensors, mmWave presence radar, Zigbee contact sensors. |
 | [`prolonged_bathroom.yaml`](blueprints/automation/bakim_bloklari/prolonged_bathroom.yaml) | Monitors bathroom presence to protect against unobserved falls or medical crises behind closed doors. Triggers an alert when occupancy exceeds threshold (e.g. 30 min). | mmWave radar (Aqara FP2, LD2410), PIR sensors, door contacts. |
 | [`door_left_open.yaml`](blueprints/automation/bakim_bloklari/door_left_open.yaml) | Alerts if external entrance doors remain open during the day (>5 min), or triggers immediate family alerts if opened during nighttime sleep hours (23:00 - 06:00) for wandering/sleepwalking prevention. | Magnetic door contact sensors (Zigbee / Z-Wave / Matter). |
-| [`escalation_pipeline.yaml`](blueprints/automation/bakim_bloklari/escalation_pipeline.yaml) | Multi-stage alert pipeline that minimizes caregiver alert fatigue: plays a local speaker inquiry first ("Are you okay?"), waits for acknowledgement, then sends a soft phone notification and waits again; only an unanswered second window escalates to the caregiver alarm. | Media player / smart speaker, companion mobile app. |
+| [`escalation_pipeline.yaml`](blueprints/automation/bakim_bloklari/escalation_pipeline.yaml) | Multi-stage alert pipeline that minimizes caregiver alert fatigue: plays a local speaker inquiry first ("Are you okay?"), waits for acknowledgement, then sends a soft phone notification and waits again; only an unanswered second window escalates to the caregiver alarm. An acknowledgement is either a boolean helper switching to `on` or a press on a button/event entity during the wait window. | Media player / smart speaker, companion mobile app, Zigbee/Matter button. |
 | [`ok_button.yaml`](blueprints/automation/bakim_bloklari/ok_button.yaml) | Wireless bedside check-in button handler. Single press acknowledges check-in and resets active alert booleans; double press or hold triggers an instant SOS distress alert. | Zigbee / Matter wireless buttons, smart switches. |
 
 ---
@@ -149,15 +149,19 @@ and a deliberately small subset of the automation engine:
 
 **Modelled**
 - time triggers matched against the simulated clock,
-- state triggers including `for:` durations (with cancellation when the entity leaves the state),
+- state triggers including `for:` durations (with cancellation when the entity leaves the state);
+  a write that does not change the state does not fire a trigger, and `entity_id` lists are supported,
 - `choose`, `delay` and `wait_for_trigger` (polled minute by minute, so an acknowledgement
-  during a wait stops the stage),
+  during a wait stops the stage); `wait.completed` is published after each wait, and a state
+  trigger inside a wait only matches a transition observed during that wait (a value that was
+  already present when the wait started does not count),
 - Home Assistant Jinja helpers this project uses: `states[...]` with `last_changed`,
   `is_state`, `state_attr`, `now`, `today_at`, `as_timestamp`, `as_datetime`, `iif`.
 
 **Not modelled**
 - real device latency, Zigbee/Z-Wave mesh behaviour, MQTT/webhook/event payloads,
-- `repeat`, `parallel`, `if/then`, `wait_template`, template triggers in the main `trigger:` block,
+- `repeat`, `parallel`, `if/then`, `variables:` action steps, `wait_template`, template
+  triggers in the main `trigger:` block,
 - templates that depend on attributes this simulator does not populate.
 
 Scenarios therefore prove *logic* (state gating, offline safety, escalation order, timing

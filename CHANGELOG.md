@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-11-04
+
+### Fixed
+- **Button/event acknowledgements were ignored (`escalation_pipeline.yaml`)**: `ack_entity`
+  advertised `event` entities, but the pipeline only accepted a switch turning `on`. Pressing a
+  button changes the event state (`idle` -> `single_press`) and never yields `on`, so the
+  resident was marked unresponsive and the caregiver alarm fired anyway. The wait now also
+  listens for any state change other than `off`/`unavailable`/`unknown`/empty and gates the
+  later stages on Home Assistant's `wait.completed`, so one press stops the pipeline.
+- **Morning check-in input narrowed (`morning_inactivity.yaml`)**: a momentary button press
+  cannot be observed at 10:00, so the input no longer offers `event` entities. It is documented
+  as a boolean check-in flag set by the "I Am OK" button blueprint.
+
+### Changed
+- **Simulator fidelity (`simulator.py`)**: state triggers now ignore writes that do not change
+  the state (Home Assistant only triggers on transitions) and accept `entity_id` lists.
+  `wait_for_trigger` publishes Home Assistant's `wait.completed`, and every state trigger inside
+  a wait only matches a transition observed during that wait - a value that was already there
+  when the wait started (for example an acknowledgement left `on`) is not a fresh answer.
+- Scenario 12 now starts the button event entity at `idle` and performs a real transition.
+
+### Tests
+- 80 tests. New regressions: an event-domain press stops escalation (red before the fix), a
+  no-change write does not fire a state trigger, and `entity_id` lists are matched.
+
 ## [0.1.1] - 2026-11-04
 
 ### Fixed
