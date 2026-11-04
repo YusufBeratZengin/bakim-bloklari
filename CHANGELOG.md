@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   speaker prompt → wait for acknowledgement → resident phone notification → wait again →
   caregiver critical alarm. Acknowledgement at either window stops the remaining stages; the
   caregiver alarm can no longer fire before the resident notification.
+- **Duplicate night alert (`door_left_open.yaml`)**: the daytime "left open" trigger now stays
+  silent inside the night window when night wandering alerts are enabled, so one night exit
+  produces one immediate alert instead of a second one after the daytime timeout.
 - **`install` overwrite safety (`cli.py`)**: existing files are never overwritten silently.
   Identical files are reported unchanged; differing files are skipped and exit non-zero unless
   `--force` is passed, and `--backup` writes a timestamped `.bak` copy before replacing.

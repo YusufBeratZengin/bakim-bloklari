@@ -421,8 +421,14 @@ class ScenarioSuite:
 
         # Door opens at 02:30 AM
         sim.process_state_change("binary_sensor.front_door", "on")
+        first_alert_count = len(sim.action_history)
+        sim.advance_time(minutes=10)  # daytime timeout must not duplicate the night alert
         fired_at = sim.action_history[0].timestamp if sim.action_history else None
-        passed = len(sim.action_history) == 1 and fired_at == datetime(2026, 11, 3, 2, 30, 0)
+        passed = (
+            first_alert_count == 1
+            and len(sim.action_history) == 1
+            and fired_at == datetime(2026, 11, 3, 2, 30, 0)
+        )
         return ScenarioResult(
             scenario_id="SCENARIO-11",
             name="Night Wandering Door Open (02:30 AM) -> Urgent Alert Fired",

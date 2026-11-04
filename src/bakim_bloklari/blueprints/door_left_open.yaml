@@ -87,21 +87,24 @@ condition:
   - condition: template
     value_template: >-
       {% set trig = trigger.id | default('daytime_open') %}
+      {% set start = night_start_var %}
+      {% set end = night_end_var %}
+      {% set t = now().strftime('%H:%M:%S') %}
+      {% set in_night = (t >= start or t <= end) if (start > end) else (t >= start and t <= end) %}
       {% if trig == 'night_open' %}
         {% if not night_alert_var %}
           false
         {% else %}
-          {% set start = night_start_var %}
-          {% set end = night_end_var %}
-          {% set t = now().strftime('%H:%M:%S') %}
-          {% if start > end %}
-            {{ t >= start or t <= end }}
-          {% else %}
-            {{ t >= start and t <= end }}
-          {% endif %}
+          {{ in_night }}
         {% endif %}
       {% else %}
-        true
+        {# The daytime timeout must stay silent at night, otherwise a night exit
+           produces both the immediate wandering alert and a duplicate 5 min later. #}
+        {% if night_alert_var %}
+          {{ not in_night }}
+        {% else %}
+          true
+        {% endif %}
       {% endif %}
 
 action:
